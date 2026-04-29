@@ -83,7 +83,10 @@ class Settings(BaseSettings):
         default="gpt-4",
         description="LLM model name"
     )
-    
+    TELEGRAM_BOT_TOKEN: Optional[str] = Field(default=None, description="Telegram bot token")
+    TELEGRAM_CHAT_ID: Optional[str] = Field(default=None, description="Telegram chat ID")
+    ACCOUNTS_CONFIG_PATH: str = Field(default="config/accounts.yaml", description="Path to accounts YAML configuration")
+
     # Logging
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
     LOG_FORMAT: str = Field(
