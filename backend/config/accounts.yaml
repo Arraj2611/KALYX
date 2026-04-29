@@ -1,0 +1,24 @@
+accounts:
+  zerodha_fno:
+    broker: zerodha
+    segments: [FNO]
+    mode: paper
+    credentials_env:
+      api_key: ZERODHA_API_KEY
+      api_secret: ZERODHA_API_SECRET
+
+  groww_equity:
+    broker: groww
+    segments: [CASH]
+    mode: paper
+    credentials_env:
+      api_key: GROWW_API_KEY
+      totp_secret: GROWW_TOTP_SECRET
+
+  paper_test:
+    broker: paper
+    segments: [CASH, FNO]
+    mode: paper
+    config:
+      initial_capital: 1000000
+      slippage_pct: 0.05
