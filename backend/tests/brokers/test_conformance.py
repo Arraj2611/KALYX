@@ -34,8 +34,32 @@ def make_paper_adapter():
     return PaperAdapter(config={"initial_capital": 500000, "slippage_pct": 0.0})
 
 
+def make_zerodha_adapter():
+    from unittest.mock import MagicMock
+
+    from app.brokers.zerodha.adapter import ZerodhaAdapter
+
+    mock_kite = MagicMock()
+    mock_kite.generate_session.return_value = {"access_token": "t", "user_id": "U"}
+    mock_kite.profile.return_value = {"user_id": "U"}
+    mock_kite.place_order.return_value = {"order_id": "Z1"}
+    mock_kite.positions.return_value = {"net": []}
+    mock_kite.margins.return_value = {
+        "equity": {"available": {"cash": 100000}, "utilised": {"debits": 0}}
+    }
+    mock_kite.orders.return_value = []
+    mock_kite.holdings.return_value = []
+    mock_kite.ltp.return_value = {}
+
+    adapter = ZerodhaAdapter(api_key="k", api_secret="s")
+    adapter._kite = mock_kite
+    adapter._logged_in = True
+    return adapter
+
+
 ADAPTER_FACTORIES = [
     pytest.param(make_paper_adapter, id="paper"),
+    pytest.param(make_zerodha_adapter, id="zerodha"),
 ]
 
 
