@@ -2,9 +2,11 @@
 Structured logging configuration for KALYX.
 """
 import logging
+import os
 import sys
 import json
 from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 from typing import Any
 
 from app.config import settings
@@ -72,4 +74,50 @@ def setup_logging():
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
     logging.getLogger("kiteconnect").setLevel(logging.INFO)
+
+
+def setup_account_logger(account_name: str, log_base_dir: str = "logs") -> None:
+    """Set up per-account log files with daily rotation."""
+    account_dir = os.path.join(log_base_dir, "accounts", account_name)
+    os.makedirs(account_dir, exist_ok=True)
+
+    log_types = ["decisions", "trades", "agent", "ws"]
+    for log_type in log_types:
+        logger_name = f"kalyx.{account_name}.{log_type}"
+        acct_logger = logging.getLogger(logger_name)
+
+        # Skip if handlers already attached (avoid duplicates on re-init)
+        if acct_logger.handlers:
+            continue
+
+        acct_logger.setLevel(logging.INFO)
+        acct_logger.propagate = False  # don't bubble to root
+
+        handler = TimedRotatingFileHandler(
+            filename=os.path.join(account_dir, f"{log_type}.log"),
+            when="midnight",
+            interval=1,
+            backupCount=90,
+            encoding="utf-8",
+        )
+        handler.setFormatter(JSONFormatter())
+        acct_logger.addHandler(handler)
+
+
+def setup_system_logging(log_base_dir: str = "logs") -> None:
+    """Set up system-level log files."""
+    for subdir in ["system", "orchestrator", "performance"]:
+        os.makedirs(os.path.join(log_base_dir, subdir), exist_ok=True)
+
+    # System error log
+    error_logger = logging.getLogger("kalyx.errors")
+    if not error_logger.handlers:
+        error_logger.setLevel(logging.ERROR)
+        error_logger.propagate = False
+        handler = TimedRotatingFileHandler(
+            filename=os.path.join(log_base_dir, "system", "error.log"),
+            when="midnight", interval=1, backupCount=180, encoding="utf-8",
+        )
+        handler.setFormatter(JSONFormatter())
+        error_logger.addHandler(handler)
 
