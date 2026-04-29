@@ -1,0 +1,45 @@
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+
+# Node (frontend)
+frontend/node_modules/
+frontend/.next/
+
+# Docker
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Remember files
+.remember/
