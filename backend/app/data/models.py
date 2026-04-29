@@ -14,7 +14,7 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    zerodha_user_id = Column(String, unique=True, index=True)
+    broker_accounts = Column(JSON, default={})  # {"zerodha": "AB1234", "groww": "GRW5678"}
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

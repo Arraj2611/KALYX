@@ -8,8 +8,25 @@ from sqlalchemy.orm import Session
 
 from app.data.database import get_db_session
 from app.execution.service import ExecutionService
+from app.brokers.account_manager import AccountManager
 
 router = APIRouter()
+
+_account_manager: Optional[AccountManager] = None
+
+
+def set_account_manager(manager: AccountManager) -> None:
+    global _account_manager
+    _account_manager = manager
+
+
+def _get_adapter(account_name: str):
+    if _account_manager is None:
+        raise HTTPException(status_code=503, detail="AccountManager not initialized")
+    try:
+        return _account_manager.get_adapter(account_name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Account '{account_name}' not found")
 
 
 class OrderRequest(BaseModel):
@@ -40,10 +57,12 @@ class OrderResponse(BaseModel):
 @router.post("/order", response_model=OrderResponse)
 async def place_order(
     order: OrderRequest,
+    account_name: str = "paper_test",
     db: Session = Depends(get_db_session)
 ):
     """Place a new order."""
-    service = ExecutionService(db)
+    adapter = _get_adapter(account_name)
+    service = ExecutionService(db, adapter)
     try:
         result = await service.place_order(
             tradingsymbol=order.tradingsymbol,
@@ -63,12 +82,14 @@ async def place_order(
 
 @router.get("/orders", response_model=List[OrderResponse])
 async def get_orders(
+    account_name: str = "paper_test",
     status: Optional[str] = None,
     strategy_id: Optional[int] = None,
     db: Session = Depends(get_db_session)
 ):
     """Get orders."""
-    service = ExecutionService(db)
+    adapter = _get_adapter(account_name)
+    service = ExecutionService(db, adapter)
     orders = service.get_orders(status=status, strategy_id=strategy_id)
     return orders
 
@@ -76,10 +97,12 @@ async def get_orders(
 @router.get("/orders/{order_id}", response_model=OrderResponse)
 async def get_order(
     order_id: str,
+    account_name: str = "paper_test",
     db: Session = Depends(get_db_session)
 ):
     """Get order by ID."""
-    service = ExecutionService(db)
+    adapter = _get_adapter(account_name)
+    service = ExecutionService(db, adapter)
     order = service.get_order(order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -89,10 +112,12 @@ async def get_order(
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(
     order_id: str,
+    account_name: str = "paper_test",
     db: Session = Depends(get_db_session)
 ):
     """Cancel an order."""
-    service = ExecutionService(db)
+    adapter = _get_adapter(account_name)
+    service = ExecutionService(db, adapter)
     try:
         result = await service.cancel_order(order_id)
         return {"success": True, "order_id": result}
@@ -101,12 +126,15 @@ async def cancel_order(
 
 
 @router.get("/positions")
-async def get_positions(db: Session = Depends(get_db_session)):
+async def get_positions(
+    account_name: str = "paper_test",
+    db: Session = Depends(get_db_session)
+):
     """Get current positions."""
-    service = ExecutionService(db)
+    adapter = _get_adapter(account_name)
+    service = ExecutionService(db, adapter)
     try:
         positions = await service.get_positions()
         return positions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-

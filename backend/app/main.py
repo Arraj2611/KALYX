@@ -2,6 +2,7 @@
 KALYX Trading System - FastAPI Application Entry Point
 """
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,11 +14,14 @@ from app.data.database import init_db, close_db
 from app.data.redis_client import init_redis, close_redis
 from app.auth.router import router as auth_router
 from app.strategies.router import router as strategies_router
-from app.execution.router import router as execution_router
-from app.risk.router import router as risk_router
+from app.execution.router import router as execution_router, set_account_manager as set_execution_account_manager
+from app.risk.router import router as risk_router, set_account_manager as set_risk_account_manager
 from app.data.router import router as data_router
 from app.agents.router import router as agents_router
+from app.decisions.router import router as decisions_router
 from app.utils.scheduler import setup_scheduler, start_scheduler, shutdown_scheduler
+from app.brokers.account_manager import AccountManager
+from app.brokers.paper.adapter import PaperAdapter
 
 # Setup logging
 setup_logging()
@@ -52,25 +56,48 @@ async def lifespan(app: FastAPI):
     logger.info("Starting KALYX Trading System...")
     logger.info(f"Version: {settings.APP_VERSION}")
     logger.info(f"Debug mode: {settings.DEBUG}")
-    
+
     # Initialize database
     await init_db()
     logger.info("Database initialized")
-    
+
     # Initialize Redis
     await init_redis()
     logger.info("Redis initialized")
-    
+
+    # Initialize account manager
+    account_manager = AccountManager()
+    config_path = os.path.join(os.path.dirname(__file__), "..", settings.ACCOUNTS_CONFIG_PATH)
+    if os.path.exists(config_path):
+        try:
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            for name, acct in config.get("accounts", {}).items():
+                if acct.get("broker") == "paper":
+                    adapter = PaperAdapter(config=acct.get("config", {}))
+                    account_manager.register(name, adapter, acct)
+            logger.info(f"Loaded accounts config from {config_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load accounts config: {e}. Falling back to paper_test.")
+            account_manager.register("paper_test", PaperAdapter(), {"broker": "paper"})
+    else:
+        account_manager.register("paper_test", PaperAdapter(), {"broker": "paper"})
+
+    logger.info(f"AccountManager: {len(account_manager.get_account_names())} accounts registered")
+    set_execution_account_manager(account_manager)
+    set_risk_account_manager(account_manager)
+
     # Setup and start scheduler
     setup_scheduler()
     start_scheduler()
     logger.info("Scheduler started")
-    
+
     yield
-    
+
     # Shutdown scheduler
     shutdown_scheduler()
-    
+
     # Shutdown
     logger.info("Shutting down KALYX Trading System...")
     await close_db()
@@ -145,6 +172,7 @@ app.include_router(execution_router, prefix="/api/execution", tags=["Execution"]
 app.include_router(risk_router, prefix="/api/risk", tags=["Risk Management"])
 app.include_router(data_router, prefix="/api/data", tags=["Data"])
 app.include_router(agents_router, prefix="/api/agents", tags=["AI Agents"])
+app.include_router(decisions_router, prefix="/api/decisions", tags=["Decisions"])
 
 
 if __name__ == "__main__":
