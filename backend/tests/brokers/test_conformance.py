@@ -57,9 +57,32 @@ def make_zerodha_adapter():
     return adapter
 
 
+def make_groww_adapter():
+    from unittest.mock import MagicMock
+
+    from app.brokers.groww.adapter import GrowwAdapter
+
+    mock = MagicMock()
+    mock.place_order.return_value = {"groww_order_id": "G1", "order_status": "OPEN"}
+    mock.get_positions_for_user.return_value = []
+    mock.get_available_margin_details.return_value = {
+        "clear_cash": 100000,
+        "net_margin_used": 0,
+    }
+    mock.get_order_list.return_value = {"order_list": []}
+    mock.get_holdings_for_user.return_value = []
+    mock.get_ltp.return_value = {}
+
+    adapter = GrowwAdapter()
+    adapter._client = mock
+    adapter._logged_in = True
+    return adapter
+
+
 ADAPTER_FACTORIES = [
     pytest.param(make_paper_adapter, id="paper"),
     pytest.param(make_zerodha_adapter, id="zerodha"),
+    pytest.param(make_groww_adapter, id="groww"),
 ]
 
 
