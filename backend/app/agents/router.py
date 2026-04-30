@@ -3,9 +3,20 @@ AI agents API router.
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 
 from app.agents.service import AgentService
+
+if TYPE_CHECKING:
+    from app.agents.pod import AgentPod
+
+_pods: Dict[str, "AgentPod"] = {}
+
+
+def set_pods(pods: Dict[str, "AgentPod"]):
+    global _pods
+    _pods = pods
+
 
 router = APIRouter()
 
@@ -70,4 +81,42 @@ async def explain_trade(request: TradeExplanationRequest):
         return explanation
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/pods")
+async def get_pods_status():
+    return {name: pod.get_status() for name, pod in _pods.items()}
+
+
+@router.get("/pods/{account_name}")
+async def get_pod_status(account_name: str):
+    if account_name not in _pods:
+        raise HTTPException(status_code=404, detail=f"Pod '{account_name}' not found")
+    return _pods[account_name].get_status()
+
+
+@router.post("/pods/{account_name}/start")
+async def start_pod(account_name: str):
+    if account_name not in _pods:
+        raise HTTPException(status_code=404, detail=f"Pod '{account_name}' not found")
+    pod = _pods[account_name]
+    await pod.start()
+    await pod.start_eval_loop()
+    return {"status": "started", "account": account_name}
+
+
+@router.post("/pods/{account_name}/stop")
+async def stop_pod(account_name: str):
+    if account_name not in _pods:
+        raise HTTPException(status_code=404, detail=f"Pod '{account_name}' not found")
+    await _pods[account_name].stop()
+    return {"status": "stopped", "account": account_name}
+
+
+@router.post("/pods/{account_name}/cycle")
+async def run_single_cycle(account_name: str):
+    if account_name not in _pods:
+        raise HTTPException(status_code=404, detail=f"Pod '{account_name}' not found")
+    await _pods[account_name].run_cycle()
+    return {"status": "cycle_complete", "account": account_name}
 

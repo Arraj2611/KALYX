@@ -10,14 +10,14 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.utils.logging import setup_logging
-from app.data.database import init_db, close_db
+from app.data.database import init_db, close_db, SessionLocal
 from app.data.redis_client import init_redis, close_redis
 from app.auth.router import router as auth_router
 from app.strategies.router import router as strategies_router
 from app.execution.router import router as execution_router, set_account_manager as set_execution_account_manager
 from app.risk.router import router as risk_router, set_account_manager as set_risk_account_manager
 from app.data.router import router as data_router
-from app.agents.router import router as agents_router
+from app.agents.router import router as agents_router, set_pods
 from app.decisions.router import router as decisions_router
 from app.utils.scheduler import setup_scheduler, start_scheduler, shutdown_scheduler
 from app.brokers.account_manager import AccountManager
@@ -67,6 +67,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize account manager
     account_manager = AccountManager()
+    config = None
     config_path = os.path.join(os.path.dirname(__file__), "..", settings.ACCOUNTS_CONFIG_PATH)
     if os.path.exists(config_path):
         try:
@@ -87,6 +88,32 @@ async def lifespan(app: FastAPI):
     logger.info(f"AccountManager: {len(account_manager.get_account_names())} accounts registered")
     set_execution_account_manager(account_manager)
     set_risk_account_manager(account_manager)
+
+    # Initialize agent pods for accounts with agents enabled
+    from app.agents.pod import AgentPod
+
+    agent_pods = {}
+    if os.path.exists(config_path):
+        for name in account_manager.get_account_names():
+            adapter = account_manager.get_adapter(name)
+            acct_config = config.get("accounts", {}).get(name, {}) if config else {}
+            if acct_config.get("agents", {}).get("enabled", False):
+                try:
+                    db_session = SessionLocal()
+                    pod = AgentPod(
+                        account_name=name,
+                        adapter=adapter,
+                        config=acct_config,
+                        db=db_session,
+                        alert_service=None,
+                    )
+                    agent_pods[name] = pod
+                    logger.info(f"Agent pod created: {name}")
+                except Exception as e:
+                    logger.error(f"Failed to create agent pod {name}: {e}")
+
+    set_pods(agent_pods)
+    logger.info(f"Agent pods initialized: {len(agent_pods)}")
 
     # Setup and start scheduler
     setup_scheduler()

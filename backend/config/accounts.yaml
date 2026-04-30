@@ -22,3 +22,22 @@ accounts:
     config:
       initial_capital: 1000000
       slippage_pct: 0.05
+    agents:
+      enabled: true
+      eval_interval_seconds: 60
+      watched_symbols: ["NIFTY", "RELIANCE"]
+      debate:
+        enabled: false
+      guardian:
+        max_loss_day: 100000
+        max_capital_pct: 90
+        max_trades_day: 100
+        min_confidence: 0.5
+        max_position_concentration_pct: 50
+      memory:
+        recall_limit: 10
+      llm:
+        quick_model: deepseek-v4-flash
+        deep_model: deepseek-v4-flash
+        ollama_base_url: http://localhost:11434
+      prompts_dir: prompts/defaults/
