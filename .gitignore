@@ -43,3 +43,6 @@ htmlcov/
 
 # Remember files
 .remember/
+
+# Reference repos (cloned for SP3 patterns)
+references/
