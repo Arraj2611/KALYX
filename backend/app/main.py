@@ -8,10 +8,21 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import yaml as _yaml
 from app.config import settings
 from app.utils.logging import setup_logging
 from app.data.database import init_db, close_db, SessionLocal
-from app.data.redis_client import init_redis, close_redis
+from app.data.redis_client import init_redis, close_redis, get_redis_client
+from app.intelligence.registry import DataSourceRegistry
+from app.intelligence.context import IntelligenceContextBuilder
+from app.intelligence.correlation.engine import CorrelationEngine
+from app.intelligence.correlation.adapters import (
+    EquityDomainAdapter, CryptoDomainAdapter, ForexDomainAdapter, CrossMarketAdapter,
+)
+from app.intelligence.sentiment.finbert import FinBertSentiment
+from app.intelligence.sources import (
+    YFinanceSource, PolymarketSource, GdeltSource, NewsScraperSource,
+)
 from app.auth.router import router as auth_router
 from app.strategies.router import router as strategies_router
 from app.execution.router import router as execution_router, set_account_manager as set_execution_account_manager
@@ -89,6 +100,41 @@ async def lifespan(app: FastAPI):
     set_execution_account_manager(account_manager)
     set_risk_account_manager(account_manager)
 
+    # Initialize intelligence layer (SP3) — opt-in via INTELLIGENCE_ENABLED
+    intelligence_builder = None
+    if settings.INTELLIGENCE_ENABLED:
+        try:
+            intel_config_path = os.path.join(os.path.dirname(__file__), "..", settings.INTELLIGENCE_CONFIG_PATH)
+            with open(intel_config_path, "r", encoding="utf-8") as f:
+                intel_config = _yaml.safe_load(f) or {}
+
+            registry = DataSourceRegistry(intel_config)
+            registry.register(YFinanceSource())
+            registry.register(PolymarketSource())
+            registry.register(GdeltSource())
+            registry.register(NewsScraperSource())
+
+            engine = CorrelationEngine()
+            engine.register_adapter(EquityDomainAdapter())
+            engine.register_adapter(CryptoDomainAdapter())
+            engine.register_adapter(ForexDomainAdapter())
+            engine.register_adapter(CrossMarketAdapter())
+
+            sentiment = FinBertSentiment()
+            redis_client = get_redis_client()
+
+            intelligence_builder = IntelligenceContextBuilder(
+                registry=registry,
+                correlation_engine=engine,
+                sentiment=sentiment,
+                redis_client=redis_client,
+                cache_ttl_seconds=60,
+            )
+            logger.info("Intelligence layer initialised")
+        except Exception as exc:
+            logger.error(f"Intelligence layer init failed: {exc}")
+            intelligence_builder = None
+
     # Initialize agent pods for accounts with agents enabled
     from app.agents.pod import AgentPod
 
@@ -106,6 +152,7 @@ async def lifespan(app: FastAPI):
                         config=acct_config,
                         db=db_session,
                         alert_service=None,
+                        intelligence_builder=intelligence_builder,
                     )
                     agent_pods[name] = pod
                     logger.info(f"Agent pod created: {name}")

@@ -41,3 +41,9 @@ accounts:
         deep_model: deepseek-v4-flash
         ollama_base_url: http://localhost:11434
       prompts_dir: prompts/defaults/
+      intelligence:
+        enabled: true
+        cache_ttl_seconds: 60
+        cache_ttl_overrides:
+          crypto: 30
+          forex: 90

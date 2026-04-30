@@ -54,3 +54,8 @@ def get_redis() -> redis.Redis:
         raise RuntimeError("Redis client not initialized. Call init_redis() first.")
     return redis_client
 
+
+def get_redis_client():
+    """Alias used by intelligence layer for backward compatibility."""
+    return get_redis()
+

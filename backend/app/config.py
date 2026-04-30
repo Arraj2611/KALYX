@@ -87,6 +87,24 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: Optional[str] = Field(default=None, description="Telegram chat ID")
     ACCOUNTS_CONFIG_PATH: str = Field(default="config/accounts.yaml", description="Path to accounts YAML configuration")
 
+    # Intelligence layer (SP3)
+    INTELLIGENCE_CONFIG_PATH: str = Field(
+        default="config/data_sources.yaml",
+        description="Path to intelligence layer data source config"
+    )
+    INTELLIGENCE_ENABLED: bool = Field(
+        default=False,
+        description="Globally enable/disable intelligence layer"
+    )
+    POLYMARKET_PRIVATE_KEY: Optional[str] = Field(
+        default=None,
+        description="Polymarket wallet private key (read-only mode skips this)"
+    )
+    POLYMARKET_FUNDER_ADDRESS: Optional[str] = Field(
+        default=None,
+        description="Polymarket funder address"
+    )
+
     # Logging
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
     LOG_FORMAT: str = Field(
