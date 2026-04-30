@@ -1,12 +1,4 @@
-"""AnalystAgent — reads market data + memory, emits BUY/SELL/HOLD signals via LLM.
-
-Builds a structured prompt from the current market state, past memory
-learnings, and recent decisions, then calls the quick-tier LLM to produce
-a JSON signal. Handles markdown-wrapped JSON (```json blocks) and falls
-back to a safe HOLD/0.0 default on any parse failure so the eval cycle
-never crashes on a malformed LLM response.
-"""
-
+"""AnalystAgent — reads market data + memory + intelligence, emits signals."""
 from __future__ import annotations
 
 import json
@@ -32,19 +24,16 @@ _SAFE_DEFAULT: dict[str, Any] = {
 
 
 class AnalystAgent(BaseAgent):
-    """LLM-backed analyst that emits directional trading signals.
-
-    Uses the quick tier for low-latency signal generation. The structured
-    JSON response is validated and parsed; any failure produces a safe HOLD
-    so downstream agents are never given garbage data.
-    """
+    """LLM-backed analyst. Optionally enriched via IntelligenceContextBuilder."""
 
     def __init__(
         self,
         llm_router: Any,
         prompts_dir: str,
         account_name: str,
+        intelligence_builder: Any | None = None,
     ) -> None:
+        self._intelligence_builder = intelligence_builder
         super().__init__(
             name="analyst",
             role="market_analyst",
@@ -54,24 +43,11 @@ class AnalystAgent(BaseAgent):
             prompts_dir=prompts_dir,
         )
 
-    # ------------------------------------------------------------------
-    # Core interface
-    # ------------------------------------------------------------------
-
     async def run(self, context: AgentContext) -> AgentOutput:
-        """Analyse market state and emit a BUY/SELL/HOLD signal.
-
-        Steps:
-        1. Build a structured prompt from market_state, memory_recall, and
-           recent_decisions.
-        2. Call the quick-tier LLM via ``think()``.
-        3. Parse the JSON response, stripping markdown code fences if present.
-        4. Validate the signal value; default to HOLD on any error.
-        5. Return an AgentOutput with action="SIGNAL".
-        """
         start = time.perf_counter()
 
-        prompt = self._build_prompt(context)
+        intel = await self._build_intelligence(context)
+        prompt = self._build_prompt(context, intel)
         raw_response = await self.think(prompt, tier="quick")
         parsed = self._parse_response(raw_response)
 
@@ -85,19 +61,23 @@ class AnalystAgent(BaseAgent):
             llm_tier_used=self.llm_tier,
         )
 
-    # ------------------------------------------------------------------
-    # Prompt construction
-    # ------------------------------------------------------------------
+    async def _build_intelligence(self, context: AgentContext) -> Any | None:
+        if self._intelligence_builder is None:
+            return None
+        try:
+            return await self._intelligence_builder.build(
+                symbol=context.symbol,
+                account_name=context.account_name,
+            )
+        except Exception as exc:
+            logger.warning(f"Intelligence build failed: {exc}")
+            return None
 
-    def _build_prompt(self, context: AgentContext) -> str:
-        """Build the analyst prompt from context sections."""
+    def _build_prompt(self, context: AgentContext, intel: Any | None) -> str:
         sections: list[str] = []
 
         sections.append(f"## Symbol\n{context.symbol}")
-
-        sections.append(
-            "## Market State\n" + json.dumps(context.market_state, indent=2)
-        )
+        sections.append("## Market State\n" + json.dumps(context.market_state, indent=2))
 
         if context.memory_recall:
             learnings = "\n".join(
@@ -116,9 +96,33 @@ class AnalystAgent(BaseAgent):
         else:
             sections.append("## Recent Decisions\nNone.")
 
+        # Intelligence enrichment
+        if intel is not None:
+            cards = getattr(intel, "convergence_cards", []) or []
+            if cards:
+                lines = [
+                    f"- [{c.score:.0f}] {c.title} ({c.trend})"
+                    for c in cards[:5]
+                ]
+                sections.append("## Convergence Signals\n" + "\n".join(lines))
+
+            odds = getattr(intel, "polymarket_odds", {}) or {}
+            if odds:
+                lines = [f"- {k}: {v:.0%}" for k, v in list(odds.items())[:10]]
+                sections.append("## Polymarket Odds\n" + "\n".join(lines))
+
+            polarity = getattr(intel, "aggregated_sentiment", 0.0) or 0.0
+            sections.append(f"## News Sentiment\nAggregated polarity: {polarity:+.2f}")
+
+            score = getattr(intel, "composite_score", None)
+            if score is not None:
+                sections.append(
+                    f"## Signal Quality\nTier: {score.tier} (composite {score.composite:.2f})"
+                )
+
         sections.append(
             "## Task\n"
-            "Analyse the market state and learnings above. "
+            "Analyse the market state, intelligence signals, and learnings above. "
             "Respond with a single JSON object containing these fields:\n"
             "  signal       : 'BUY' | 'SELL' | 'HOLD' | 'EXIT'\n"
             "  confidence   : float 0.0–1.0\n"
@@ -131,28 +135,15 @@ class AnalystAgent(BaseAgent):
 
         return "\n\n".join(sections)
 
-    # ------------------------------------------------------------------
-    # Response parsing
-    # ------------------------------------------------------------------
-
     def _parse_response(self, raw: str) -> dict[str, Any]:
-        """Parse the LLM response into a signal dict.
-
-        Strips markdown code fences (```json ... ``` or ``` ... ```) before
-        attempting JSON parse. Validates the signal value and falls back to
-        the safe HOLD default on any error.
-        """
         try:
             text = raw.strip()
-
-            # Strip markdown code fences if present
             fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
             if fence_match:
                 text = fence_match.group(1).strip()
 
             parsed = json.loads(text)
 
-            # Validate signal
             signal = str(parsed.get("signal", "HOLD")).upper()
             if signal not in _VALID_SIGNALS:
                 logger.warning(
@@ -161,10 +152,7 @@ class AnalystAgent(BaseAgent):
                 )
                 signal = "HOLD"
             parsed["signal"] = signal
-
-            # Ensure confidence is a float
             parsed["confidence"] = float(parsed.get("confidence", 0.0))
-
             return parsed
 
         except Exception as exc:

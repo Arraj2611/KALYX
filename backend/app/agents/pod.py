@@ -59,6 +59,7 @@ class AgentPod:
         db: Any,
         alert_service: Any = None,
         stream_publisher: Any = None,
+        intelligence_builder: Any = None,
     ) -> None:
         self.account_name = account_name
         self.adapter = adapter
@@ -66,6 +67,7 @@ class AgentPod:
         self._db = db
         self._alert_service = alert_service
         self._stream_publisher = stream_publisher
+        self._intelligence_builder = intelligence_builder
         self._running = False
         self._eval_task: asyncio.Task | None = None
 
@@ -96,7 +98,10 @@ class AgentPod:
         self._decision_logger = DecisionLogger(db=db, alert_service=alert_service)
 
         # Instantiate all agents
-        self.analyst = AnalystAgent(self.llm_router, prompts_dir, account_name)
+        self.analyst = AnalystAgent(
+            self.llm_router, prompts_dir, account_name,
+            intelligence_builder=intelligence_builder,
+        )
         self.bullish = DebateAgent("bullish", self.llm_router, prompts_dir, account_name)
         self.bearish = DebateAgent("bearish", self.llm_router, prompts_dir, account_name)
         self.judge = JudgeAgent(self.llm_router, prompts_dir, account_name)
