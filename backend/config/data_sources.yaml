@@ -1,0 +1,14 @@
+data_vendors:
+  ohlcv: zerodha_mcp,groww_mcp,yfinance
+  quotes: groww_mcp,zerodha_mcp
+  news: trafilatura,gdelt
+  odds: polymarket
+  geopolitical: gdelt
+  screener: groww_mcp
+  fundamentals: yfinance,groww_mcp
+  options: groww_mcp
+
+source_credentials_env:
+  polymarket_funder: POLYMARKET_FUNDER_ADDRESS
+  polymarket_pk: POLYMARKET_PRIVATE_KEY
+  polymarket_chain: POLYMARKET_CHAIN_ID
