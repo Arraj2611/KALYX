@@ -69,4 +69,5 @@ gdelt-doc-api>=1.7.0
 py-clob-client>=0.1.0
 transformers>=4.40.0
 torch>=2.2.0; platform_machine != 'aarch64'
+scrapling>=0.4.0
 

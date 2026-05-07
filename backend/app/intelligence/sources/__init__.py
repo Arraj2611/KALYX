@@ -5,6 +5,7 @@ from app.intelligence.sources.mcp_groww_source import GrowwMCPSource
 from app.intelligence.sources.mcp_zerodha_source import ZerodhaMCPSource
 from app.intelligence.sources.gdelt_source import GdeltSource
 from app.intelligence.sources.news_scraper_source import NewsScraperSource
+from app.intelligence.sources.scrapling_source import ScraplingSource
 
 __all__ = [
     "YFinanceSource",
@@ -13,4 +14,5 @@ __all__ = [
     "ZerodhaMCPSource",
     "GdeltSource",
     "NewsScraperSource",
+    "ScraplingSource",
 ]

@@ -1,7 +1,7 @@
 data_vendors:
   ohlcv: zerodha_mcp,groww_mcp,yfinance
   quotes: groww_mcp,zerodha_mcp
-  news: trafilatura,gdelt
+  news: scrapling,trafilatura,gdelt
   odds: polymarket
   geopolitical: gdelt
   screener: groww_mcp

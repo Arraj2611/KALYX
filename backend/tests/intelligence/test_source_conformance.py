@@ -70,6 +70,11 @@ def make_news_scraper_source():
     return NewsScraperSource()
 
 
+def make_scrapling_source():
+    from app.intelligence.sources.scrapling_source import ScraplingSource
+    return ScraplingSource()
+
+
 SOURCE_FACTORIES.extend([
     pytest.param(make_yfinance_source, id="yfinance"),
     pytest.param(make_polymarket_source, id="polymarket"),
@@ -77,6 +82,7 @@ SOURCE_FACTORIES.extend([
     pytest.param(make_zerodha_mcp_source, id="zerodha_mcp"),
     pytest.param(make_gdelt_source, id="gdelt"),
     pytest.param(make_news_scraper_source, id="news_scraper"),
+    pytest.param(make_scrapling_source, id="scrapling"),
 ])
 
 
