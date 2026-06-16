@@ -64,7 +64,7 @@ class IntelligenceContextBuilder:
         latency: dict[str, float] = {}
 
         ohlcv = await self._safe_fetch("get_ohlcv", "yfinance", sources_used, latency, symbol=symbol)
-        news = await self._safe_fetch("get_news", "trafilatura", sources_used, latency, symbol=symbol)
+        news = await self._safe_fetch_registry("get_news", sources_used, latency, symbol=symbol)
         polymarket = await self._safe_fetch("get_polymarket_odds", "polymarket", sources_used, latency)
         geopolitical = await self._safe_fetch("get_gdelt_events", "gdelt", sources_used, latency, keyword=symbol)
 
@@ -125,6 +125,28 @@ class IntelligenceContextBuilder:
 
         await self._cache(cache_key, ctx)
         return ctx
+
+    async def _safe_fetch_registry(self, method: str, sources_used, latency, **kwargs):
+        """Call registry vendor chain; record the winning source name + latency."""
+        start = time.perf_counter()
+        try:
+            result, vendor = await asyncio.wait_for(
+                self._registry.fetch_with_meta(method, **kwargs),
+                timeout=self._fetch_timeout,
+            )
+            elapsed = round((time.perf_counter() - start) * 1000, 2)
+            label = vendor or method
+            if vendor is not None:
+                sources_used.append(vendor)
+            elif result is not None:
+                sources_used.append(method)
+            latency[label] = elapsed
+            return result
+        except Exception as exc:
+            elapsed = round((time.perf_counter() - start) * 1000, 2)
+            latency[method] = elapsed
+            logger.warning(f"safe_fetch_registry({method}) failed: {exc}")
+            return None
 
     async def _safe_fetch(self, method, source_label, sources_used, latency, **kwargs):
         start = time.perf_counter()

@@ -100,6 +100,16 @@ async def test_fetch_uses_primary(basic_config):
     assert calls == ["yfinance"]
 
 
+# --- 7b. test_fetch_with_meta_returns_winning_vendor ---
+@pytest.mark.asyncio
+async def test_fetch_with_meta_returns_winning_vendor(basic_config):
+    reg = DataSourceRegistry(basic_config)
+    reg.register(MockSource("yfinance", ["get_ohlcv"]))
+    value, vendor = await reg.fetch_with_meta("get_ohlcv", symbol="X")
+    assert value["src"] == "yfinance"
+    assert vendor == "yfinance"
+
+
 # --- 8. test_fetch_falls_back_on_rate_limit ---
 @pytest.mark.asyncio
 async def test_fetch_falls_back_on_rate_limit(basic_config):

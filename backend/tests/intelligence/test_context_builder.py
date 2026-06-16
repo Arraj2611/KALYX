@@ -35,10 +35,12 @@ async def test_builder_build_assembles_context():
     registry = MagicMock()
     registry.fetch = AsyncMock(side_effect=[
         {"Close": {0: 22500}},
-        [{"title": "Stock surges"}],
         {"fed-rate-cut-jun": 0.82},
         [],
     ])
+    registry.fetch_with_meta = AsyncMock(
+        return_value=([{"title": "Stock surges"}], "scrapling"),
+    )
     sentiment = MagicMock(spec=FinBertSentiment)
     sentiment.score_batch = MagicMock(return_value=[{"polarity": 0.8, "label": "positive", "score": 0.8}])
     sentiment.aggregate_polarity = MagicMock(return_value=0.8)
@@ -59,6 +61,8 @@ async def test_builder_build_assembles_context():
     assert ctx.symbol == "NIFTY"
     assert ctx.aggregated_sentiment == 0.8
     assert ctx.polymarket_odds == {"fed-rate-cut-jun": 0.82}
+    assert "scrapling" in ctx.sources_used
+    registry.fetch_with_meta.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -84,6 +88,7 @@ async def test_builder_uses_cache_when_present():
 
     registry = MagicMock()
     registry.fetch = AsyncMock()
+    registry.fetch_with_meta = AsyncMock()
     sentiment = MagicMock(spec=FinBertSentiment)
     engine = CorrelationEngine()
 
@@ -100,6 +105,7 @@ async def test_builder_uses_cache_when_present():
     ctx = await builder.build(symbol="NIFTY", account_name="paper_test")
     assert ctx.symbol == "NIFTY"
     registry.fetch.assert_not_called()
+    registry.fetch_with_meta.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -110,6 +116,7 @@ async def test_builder_handles_source_failure_gracefully():
 
     registry = MagicMock()
     registry.fetch = AsyncMock(side_effect=RuntimeError("all sources down"))
+    registry.fetch_with_meta = AsyncMock(side_effect=RuntimeError("all sources down"))
     sentiment = MagicMock(spec=FinBertSentiment)
     sentiment.score_batch = MagicMock(return_value=[])
     sentiment.aggregate_polarity = MagicMock(return_value=0.0)

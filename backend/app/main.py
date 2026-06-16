@@ -21,7 +21,11 @@ from app.intelligence.correlation.adapters import (
 )
 from app.intelligence.sentiment.finbert import FinBertSentiment
 from app.intelligence.sources import (
-    YFinanceSource, PolymarketSource, GdeltSource, NewsScraperSource,
+    YFinanceSource,
+    PolymarketSource,
+    GdeltSource,
+    NewsScraperSource,
+    ScraplingSource,
 )
 from app.auth.router import router as auth_router
 from app.strategies.router import router as strategies_router
@@ -109,6 +113,7 @@ async def lifespan(app: FastAPI):
                 intel_config = _yaml.safe_load(f) or {}
 
             registry = DataSourceRegistry(intel_config)
+            registry.register(ScraplingSource())
             registry.register(YFinanceSource())
             registry.register(PolymarketSource())
             registry.register(GdeltSource())

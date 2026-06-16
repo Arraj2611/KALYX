@@ -52,7 +52,13 @@ class DataSourceRegistry:
         category = self.get_category_for_method(method)
         return self._vendor_config.get(category, [])
 
-    async def fetch(self, method: str, **kwargs) -> Any:
+    async def fetch_with_meta(self, method: str, **kwargs) -> tuple[Any, str | None]:
+        """Like ``fetch`` but returns ``(value, winning_vendor_name)``.
+
+        On success, ``winning_vendor_name`` is the registered source that
+        produced ``value``. On total failure, raises the same exceptions as
+        ``fetch`` (including when no registered source supports the method).
+        """
         chain = self.get_vendor_chain(method)
         last_error: Exception | None = None
 
@@ -63,7 +69,8 @@ class DataSourceRegistry:
             if not source.supports(method):
                 continue
             try:
-                return await source.fetch(method, **kwargs)
+                value = await source.fetch(method, **kwargs)
+                return value, vendor_name
             except (RateLimitError, SourceUnavailableError) as exc:
                 logger.warning(f"Source {vendor_name} failed for {method}: {exc}")
                 last_error = exc
@@ -71,4 +78,10 @@ class DataSourceRegistry:
 
         if last_error:
             raise last_error
+        if not chain:
+            raise RuntimeError(f"No vendor chain configured for '{method}'")
         raise RuntimeError(f"No vendor available for '{method}'")
+
+    async def fetch(self, method: str, **kwargs) -> Any:
+        value, _ = await self.fetch_with_meta(method, **kwargs)
+        return value
