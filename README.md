@@ -1,16 +1,20 @@
-# KALYX - Automated Index Options Trading System
+# KALYX — Autonomous Multi-Market AI Trading Platform
 
-An elite, production-grade automated trading system for index options using Zerodha Kite Connect API.
+KALYX is an autonomous, multi-broker, multi-asset trading platform. A broker-abstraction
+layer (Zerodha, Groww, Paper) feeds per-account AI agent pods (analyst → debate → guardian →
+executor → memory → strategist) enriched by a multi-source intelligence layer (market data,
+news/sentiment, prediction-market odds, geopolitical events, cross-market correlation).
+Every decision — including trades **not** taken — is logged with full reasoning for a
+self-improving learning loop.
 
 ## Features
 
-- **Live Trading**: Automated order execution with Zerodha Kite Connect
-- **Strategy Engine**: Plugin-based strategy system with import/export
-- **Backtesting**: Historical data backtesting with comprehensive metrics
-- **Risk Management**: Capital usage limits, daily loss limits, circuit breakers
-- **Real-time Monitoring**: Live dashboard with WebSocket updates
-- **AI Agents**: Market analysis, strategy critique, trade explanation
-- **Dark UI**: Sleek, modern dark-themed interface
+- **Multi-broker execution**: unified `BrokerAdapter` over Zerodha, Groww, and a Paper simulator
+- **Per-account agent pods**: analyst, bull/bear debate + judge, math-based guardian, executor, memory, overnight strategist
+- **Intelligence layer**: 6+ data sources with vendor fallback, FinBERT sentiment, composite signal-quality scoring, cross-market convergence detection
+- **Decision log + hindsight**: every signal/skip/block recorded; outcomes filled post-session to drive learning
+- **Two-tier local LLM**: Ollama quick/deep routing — near-zero inference cost for 24/7 loops
+- **Risk management**: capital/loss/trade limits, circuit breakers, paper-mode default
 
 ## Tech Stack
 
