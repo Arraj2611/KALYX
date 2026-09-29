@@ -46,3 +46,16 @@ htmlcov/
 
 # Reference repos (cloned for SP3 patterns)
 references/
+
+# AI coding-tool config (local only)
+.claude/
+.cursor/
+.cursorrules
+.windsurfrules
+.mcp.json
+.opencode.json
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.code-review-graph/
+.remember/
