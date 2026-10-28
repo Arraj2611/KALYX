@@ -44,3 +44,11 @@ def test_same_headline_different_symbol_stored_twice():
     assert rec.record("ONGC", "Oil jumps", TS, "google_rss", SCORED) is True
     with factory() as s:
         assert s.query(ShadowInference).count() == 2
+
+
+def test_exists_true_only_after_record_for_that_symbol():
+    rec, _ = _rec()
+    assert rec.exists("RELIANCE", "Oil jumps") is False
+    rec.record("RELIANCE", "Oil jumps", TS, "google_rss", SCORED)
+    assert rec.exists("RELIANCE", "  oil JUMPS ") is True
+    assert rec.exists("ONGC", "Oil jumps") is False

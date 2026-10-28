@@ -1,0 +1,152 @@
+# NIFTY 50 constituents, fetched from niftyindices.com/IndexConstituent/ind_nifty50list.csv on 2026-10-28.
+# keywords[0] is the news search phrase (company name without legal suffix).
+- symbol: "ADANIENT"
+  ticker: "ADANIENT.NS"
+  keywords: ["Adani Enterprises"]
+- symbol: "ADANIPORTS"
+  ticker: "ADANIPORTS.NS"
+  keywords: ["Adani Ports and Special Economic Zone"]
+- symbol: "APOLLOHOSP"
+  ticker: "APOLLOHOSP.NS"
+  keywords: ["Apollo Hospitals Enterprise"]
+- symbol: "ASIANPAINT"
+  ticker: "ASIANPAINT.NS"
+  keywords: ["Asian Paints"]
+- symbol: "AXISBANK"
+  ticker: "AXISBANK.NS"
+  keywords: ["Axis Bank"]
+- symbol: "BSE"
+  ticker: "BSE.NS"
+  keywords: ["BSE"]
+- symbol: "BAJAJ-AUTO"
+  ticker: "BAJAJ-AUTO.NS"
+  keywords: ["Bajaj Auto"]
+- symbol: "BAJFINANCE"
+  ticker: "BAJFINANCE.NS"
+  keywords: ["Bajaj Finance"]
+- symbol: "BAJAJFINSV"
+  ticker: "BAJAJFINSV.NS"
+  keywords: ["Bajaj Finserv"]
+- symbol: "BEL"
+  ticker: "BEL.NS"
+  keywords: ["Bharat Electronics"]
+- symbol: "BHARTIARTL"
+  ticker: "BHARTIARTL.NS"
+  keywords: ["Bharti Airtel"]
+- symbol: "CIPLA"
+  ticker: "CIPLA.NS"
+  keywords: ["Cipla"]
+- symbol: "COALINDIA"
+  ticker: "COALINDIA.NS"
+  keywords: ["Coal India"]
+- symbol: "DRREDDY"
+  ticker: "DRREDDY.NS"
+  keywords: ["Dr. Reddy's Laboratories"]
+- symbol: "EICHERMOT"
+  ticker: "EICHERMOT.NS"
+  keywords: ["Eicher Motors"]
+- symbol: "ETERNAL"
+  ticker: "ETERNAL.NS"
+  keywords: ["Eternal"]
+- symbol: "GRASIM"
+  ticker: "GRASIM.NS"
+  keywords: ["Grasim Industries"]
+- symbol: "HCLTECH"
+  ticker: "HCLTECH.NS"
+  keywords: ["HCL Technologies"]
+- symbol: "HDFCBANK"
+  ticker: "HDFCBANK.NS"
+  keywords: ["HDFC Bank"]
+- symbol: "HDFCLIFE"
+  ticker: "HDFCLIFE.NS"
+  keywords: ["HDFC Life Insurance Company"]
+- symbol: "HINDALCO"
+  ticker: "HINDALCO.NS"
+  keywords: ["Hindalco Industries"]
+- symbol: "HINDUNILVR"
+  ticker: "HINDUNILVR.NS"
+  keywords: ["Hindustan Unilever"]
+- symbol: "ICICIBANK"
+  ticker: "ICICIBANK.NS"
+  keywords: ["ICICI Bank"]
+- symbol: "ITC"
+  ticker: "ITC.NS"
+  keywords: ["ITC"]
+- symbol: "INFY"
+  ticker: "INFY.NS"
+  keywords: ["Infosys"]
+- symbol: "INDIGO"
+  ticker: "INDIGO.NS"
+  keywords: ["InterGlobe Aviation"]
+- symbol: "JSWSTEEL"
+  ticker: "JSWSTEEL.NS"
+  keywords: ["JSW Steel"]
+- symbol: "JIOFIN"
+  ticker: "JIOFIN.NS"
+  keywords: ["Jio Financial Services"]
+- symbol: "KOTAKBANK"
+  ticker: "KOTAKBANK.NS"
+  keywords: ["Kotak Mahindra Bank"]
+- symbol: "LT"
+  ticker: "LT.NS"
+  keywords: ["Larsen & Toubro"]
+- symbol: "M&M"
+  ticker: "M&M.NS"
+  keywords: ["Mahindra & Mahindra"]
+- symbol: "MARUTI"
+  ticker: "MARUTI.NS"
+  keywords: ["Maruti Suzuki India"]
+- symbol: "MAXHEALTH"
+  ticker: "MAXHEALTH.NS"
+  keywords: ["Max Healthcare Institute"]
+- symbol: "NTPC"
+  ticker: "NTPC.NS"
+  keywords: ["NTPC"]
+- symbol: "NESTLEIND"
+  ticker: "NESTLEIND.NS"
+  keywords: ["Nestle India"]
+- symbol: "ONGC"
+  ticker: "ONGC.NS"
+  keywords: ["Oil & Natural Gas Corporation"]
+- symbol: "POWERGRID"
+  ticker: "POWERGRID.NS"
+  keywords: ["Power Grid Corporation of India"]
+- symbol: "RELIANCE"
+  ticker: "RELIANCE.NS"
+  keywords: ["Reliance Industries"]
+- symbol: "SBILIFE"
+  ticker: "SBILIFE.NS"
+  keywords: ["SBI Life Insurance Company"]
+- symbol: "SHRIRAMFIN"
+  ticker: "SHRIRAMFIN.NS"
+  keywords: ["Shriram Finance"]
+- symbol: "SBIN"
+  ticker: "SBIN.NS"
+  keywords: ["State Bank of India"]
+- symbol: "SUNPHARMA"
+  ticker: "SUNPHARMA.NS"
+  keywords: ["Sun Pharmaceutical Industries"]
+- symbol: "TCS"
+  ticker: "TCS.NS"
+  keywords: ["Tata Consultancy Services"]
+- symbol: "TATACONSUM"
+  ticker: "TATACONSUM.NS"
+  keywords: ["Tata Consumer Products"]
+- symbol: "TMPV"
+  ticker: "TMPV.NS"
+  keywords: ["Tata Motors Passenger Vehicles"]
+- symbol: "TATASTEEL"
+  ticker: "TATASTEEL.NS"
+  keywords: ["Tata Steel"]
+- symbol: "TECHM"
+  ticker: "TECHM.NS"
+  keywords: ["Tech Mahindra"]
+- symbol: "TITAN"
+  ticker: "TITAN.NS"
+  keywords: ["Titan Company"]
+- symbol: "TRENT"
+  ticker: "TRENT.NS"
+  keywords: ["Trent"]
+- symbol: "ULTRACEMCO"
+  ticker: "ULTRACEMCO.NS"
+  keywords: ["UltraTech Cement"]

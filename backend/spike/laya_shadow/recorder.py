@@ -37,3 +37,12 @@ class ShadowRecorder:
                 session.rollback()
                 return False
         return True
+
+    def exists(self, symbol: str, title: str) -> bool:
+        with self._factory() as session:
+            return (
+                session.query(ShadowInference.id)
+                .filter_by(symbol=symbol, headline_hash=headline_hash(title))
+                .first()
+                is not None
+            )
