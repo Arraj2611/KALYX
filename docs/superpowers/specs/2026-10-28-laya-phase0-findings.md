@@ -69,3 +69,54 @@ zero-shot.
    today, but ships a monkeypatch in the app. Not recommended.
 4. **Stop here** given the weak zero-shot results, or narrow to `event_type` + `urgency`
    triage only.
+
+---
+
+## Resolved in spike venv (2026-10-28, later)
+
+**Verdict: GO** (conditional on the source change below).
+
+### Environment
+- `backend/spike/.venv`: torch 2.5.1+cu121 (CUDA True on the 4070), transformers 4.55.4,
+  `laya==0.4.17`, SQLAlchemy 2.1, yfinance 1.7.0, `gdeltdoc` (the PyPI name is `gdeltdoc`;
+  `gdelt-doc-api`, which the app's requirements list, does not resolve from the spike venv).
+- Laya runs **without** the `torch.compile` hack. English checkpoint, 4 questions, 20 calls:
+  cold load + first 9.9 s, **p50 49.7 ms**, p95 94.5 ms, max 98.6 ms, 2.4 GB GPU. The kill
+  criterion is p50 over 100 ms, so it passes, but p95 is close to the line.
+- FinBERT (`ProsusAI/finbert`) loads on the GPU in the same venv.
+
+### Model card (convaiinnovations/laya)
+- Apache 2.0, open weights. Confirmed.
+- The card itself says: base checkpoints are **near chance on typed-decisions zero-shot**
+  (0.362 vs a 0.461 majority baseline); probabilities ship **over-confident** (per-type
+  temperature refit cut mean ECE 0.466 to 0.081); `noul` answers **can follow the option
+  labels rather than the input**; choice questions with more than ~20 options perform poorly;
+  ordinal `score` is the weakest type; `action.act_probability` has no usable signal; no
+  finance validation. Fine-tuning on domain decisions is the stated main route to accuracy.
+- This matches what we saw in the 10-headline probe. Treat the expected verdict as
+  `inconclusive_finetune`; the spike's real product is a labeled dataset plus a measured
+  baseline. Any use of Laya probabilities needs temperature refit on our own data.
+
+### News sources (real behaviour from this machine today)
+- `yf.Ticker(sym).news` returns **0 items for every symbol tested, including AAPL**. This
+  is what the app's `YFinanceSource.get_news` calls, so it is effectively dead here.
+- `yf.Search(name).news` works but is flat and tiny: ~1 item per query. Fields: `title`,
+  `providerPublishTime` (epoch), `link`, `publisher`, `relatedTickers`.
+- GDELT (`gdeltdoc`) returned `RateLimitError` on every request, including single requests
+  8 s apart. The app's `get_news` chain (`scrapling,trafilatura,gdelt`) falls through to
+  GDELT, so **live `build()` news is probably empty right now**, meaning live FinBERT may
+  be scoring nothing. Out of scope for this spike; worth a separate look.
+- **Google News RSS** (`news.google.com/rss/search?q=<name>+when:1d&hl=en-IN&gl=IN&ceid=IN:en`)
+  works: 27 to 100 items per name per day (Reliance 100, Infosys 49, HDFC Bank 27, SBI 44,
+  Tata Motors 53), **every item has `pubDate`** (RFC 822, GMT), plus `title`, `link`, `source`.
+  Titles carry a trailing " - <publisher>" suffix to strip, and some items are stock-quote
+  pages, not news. Publish-time drop rate: **0%**. Estimated volume across NIFTY 50 is on
+  the order of 1,000+ headlines/day, so 500 labeled headlines is reachable in days.
+  Caveat: it is an unofficial public feed; check its terms before anything beyond personal
+  research.
+
+### Decision for the plan
+Primary poller source is Google News RSS; `yf.Search` and GDELT (with a >=10 s spacing and
+backoff, skipped on `RateLimitError`) are optional secondaries. Item shapes recorded above
+feed `normalize_headline` (handle RFC 822 `pubDate` strings, epoch `providerPublishTime`,
+and strip the " - <publisher>" suffix).

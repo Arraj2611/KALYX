@@ -1,6 +1,32 @@
 # Laya Shadow-Mode Spike — Design
 
-Date: 2026-10-28 | Branch context: `feat/broker-abstraction` | Status: draft for approval
+Date: 2026-10-28 | Branch context: `feat/broker-abstraction` | Status: approved, amended after Phase 0
+
+## Amendment 1 (after Phase 0, user decision: poller-only venv)
+
+Phase 0 (`2026-10-28-laya-phase0-findings.md`) showed Laya cannot run in the app's
+environment (torch 2.3.1 on Python 3.12 cannot import ModernBERT). The user chose to run
+the spike in its own isolated environment. These changes **supersede** conflicting text below:
+
+- **No `build()` hook, no `ShadowDispatcher`, no changes to `context.py`, `config.py`,
+  `main.py` or the app's `requirements.txt`.** The app and its torch are untouched.
+- The spike lives in `backend/spike/` with its own venv (`backend/spike/.venv`, git-ignored),
+  its own `requirements-spike.txt` (torch 2.5.1+cu121, transformers 4.48-4.55, `laya==0.4.17`),
+  and a self-contained package `backend/spike/laya_shadow/`. It imports nothing from `app.*`
+  (the app's `Settings` requires Zerodha env vars at import time).
+- **Storage:** a local SQLite file (`backend/spike/shadow.db`, git-ignored; override with
+  `SHADOW_DB_URL`), not the app's Postgres. My call: zero risk to production data, no
+  Postgres needed to run the spike.
+- **Data source is the poller only.** FinBERT baseline is computed inside the poller in the
+  same venv. Consequence: the spike does not observe the live `build()` news path; it
+  observes what the poller fetches. The "no measurable slowdown of build()" criterion and
+  the 5% overhead benchmark are **removed** (nothing to slow down).
+- **Kill criteria now:** p50 latency above 100 ms on the 4070, or no lift (see Decision rule).
+- Phase 0 still owes: real GDELT / yfinance item shapes, headline volume, publish-time drop
+  rate, and the Hugging Face model card read. They are done in the new venv before Phase 1.
+- Early warning from Phase 0 (10 headlines, zero-shot): `event_type` looked right, but
+  `bullish_for_symbol` and `material_to_symbol` were confidently wrong. Expect
+  "inconclusive, fine-tune" as the most likely verdict.
 
 ## Intent and why
 
