@@ -43,23 +43,44 @@ def test_bootstrap_deterministic_with_seed():
 
 
 def test_verdict_insufficient_data():
-    assert verdict(100, (0.05, 0.02, 0.08), 0.6, 40.0) == "insufficient_data"
+    assert verdict(100, 80, (0.05, 0.02, 0.08), True, 40.0) == "insufficient_data"
+
+
+def test_verdict_insufficient_when_few_independent_clusters():
+    assert verdict(900, 40, (0.05, 0.02, 0.08), True, 40.0) == "insufficient_data"
 
 
 def test_verdict_kill_on_latency():
-    assert verdict(600, (0.05, 0.02, 0.08), 0.6, 120.0) == "kill"
+    assert verdict(600, 300, (0.05, 0.02, 0.08), True, 120.0) == "kill"
 
 
-def test_verdict_kill_when_clearly_worse_and_urgency_weak():
-    assert verdict(600, (-0.05, -0.08, -0.02), 0.5, 40.0) == "kill"
+def test_verdict_kill_when_clearly_worse_and_no_promise():
+    assert verdict(600, 300, (-0.05, -0.08, -0.02), False, 40.0) == "kill"
+
+
+def test_verdict_not_kill_when_worse_but_promising():
+    assert verdict(600, 300, (-0.05, -0.08, -0.02), True, 40.0) == "inconclusive_finetune"
 
 
 def test_verdict_adopt_when_ci_above_zero():
-    assert verdict(600, (0.05, 0.02, 0.08), 0.5, 40.0) == "adopt"
+    assert verdict(600, 300, (0.05, 0.02, 0.08), False, 40.0) == "adopt"
 
 
 def test_verdict_inconclusive_when_ci_straddles_zero():
-    assert verdict(600, (0.01, -0.02, 0.04), 0.5, 40.0) == "inconclusive_finetune"
+    assert verdict(600, 300, (0.01, -0.02, 0.04), False, 40.0) == "inconclusive_finetune"
+
+
+def test_cluster_bootstrap_ci_wider_than_row_bootstrap_when_labels_cluster():
+    rng = np.random.default_rng(5)
+    n_clusters, per = 60, 10
+    y_c = rng.integers(0, 2, n_clusters)
+    a_c = y_c + rng.normal(0, 1.0, n_clusters)
+    b_c = rng.normal(0, 1.0, n_clusters)
+    y, a, b = (np.repeat(v, per) for v in (y_c, a_c, b_c))
+    clusters = np.repeat(np.arange(n_clusters), per)
+    _, lo_r, hi_r = paired_bootstrap_diff(y, a, b, auroc, n=400, seed=1)
+    _, lo_c, hi_c = paired_bootstrap_diff(y, a, b, auroc, n=400, seed=1, clusters=clusters)
+    assert (hi_c - lo_c) > 1.5 * (hi_r - lo_r)
 
 
 def test_evaluate_rows_produces_report_and_verdict():
@@ -68,8 +89,9 @@ def test_evaluate_rows_produces_report_and_verdict():
     for i in range(600):
         material = bool(rng.random() < 0.25)
         rows.append({
-            "material": material,
-            "answers": {"material": float(rng.random()), "bullish": float(rng.random()),
+            "material": material, "cluster": f"S|{i // 4}", "off_hours": bool(i % 3 == 0),
+            "finbert_probs": {"positive": 0.3, "neutral": 0.4, "negative": 0.3},
+            "answers": {"material": float(rng.random()), "bullish": float(rng.random()), "event_type": {"other_noise": float(rng.random())},
                         "urgency": {"0": 0.25, "1": 0.25, "2": 0.25, "3": 0.25}},
             "finbert_polarity": float(rng.normal()),
             "latency_ms": 50.0,
@@ -79,3 +101,4 @@ def test_evaluate_rows_produces_report_and_verdict():
     text, result = evaluate_rows(rows)
     assert result in {"insufficient_data", "kill", "inconclusive_finetune", "adopt"}
     assert "AUROC" in text and result in text
+    assert "off-hours" in text and "clusters" in text

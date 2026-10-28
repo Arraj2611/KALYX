@@ -16,7 +16,13 @@ def _parse_time(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         dt = value
     elif isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=timezone.utc)
+        seconds = float(value)
+        if seconds > 1e11:  # milliseconds
+            seconds /= 1000
+        try:
+            return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
     elif isinstance(value, str):
         text = value.strip()
         dt = None

@@ -28,6 +28,7 @@ class ShadowRecorder:
             finbert_label=scored.get("finbert_label"),
             finbert_score=scored.get("finbert_score"),
             finbert_polarity=scored.get("finbert_polarity"),
+            finbert_probs=scored.get("finbert_probs"),
         )
         with self._factory() as session:
             session.add(row)

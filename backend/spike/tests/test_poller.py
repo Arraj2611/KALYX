@@ -111,3 +111,48 @@ def test_google_rss_item_parsed():
 
 def test_google_rss_query_uses_first_keyword():
     assert "Reliance+Industries" in GoogleNewsRss.url_for({"keywords": ["Reliance Industries"]})
+
+
+def test_normalize_exception_counted_not_raised(monkeypatch):
+    import laya_shadow.poller as poller
+
+    def boom(item):
+        raise OSError("bad epoch")
+
+    monkeypatch.setattr(poller, "normalize_headline", boom)
+    summary, _ = _run([FakeSource("g", [{"title": "x", "pubDate": PUB}])])
+    assert summary["errors"] == 1 and summary["recorded"] == 0
+
+
+def test_recorder_exception_counted_and_pass_continues():
+    class FlakyRecorder(ShadowRecorder):
+        def record(self, *a, **k):
+            raise RuntimeError("database is locked")
+
+    factory = make_session_factory("sqlite://")
+    src = FakeSource("g", [{"title": "One", "pubDate": PUB}, {"title": "Two", "pubDate": PUB}])
+    summary = poll_once(SYMBOLS, [src], FakeScorer(), FakeBaseline(), FlakyRecorder(factory))
+    assert summary["errors"] == 2
+
+
+def test_items_per_symbol_per_source_capped():
+    items = [{"title": f"Story {i}", "pubDate": PUB} for i in range(100)]
+    factory = make_session_factory("sqlite://")
+    summary = poll_once(SYMBOLS, [FakeSource("g", items)], FakeScorer(), FakeBaseline(), ShadowRecorder(factory), max_items=60)
+    assert summary["fetched"] == 60 and summary["per_symbol"]["RELIANCE"] == 60
+
+
+def test_google_query_override_used_when_present():
+    url = GoogleNewsRss.url_for({"keywords": ["Adani Ports and Special Economic Zone"], "query": '"Adani Ports"'})
+    assert "%22Adani+Ports%22" in url and "Special" not in url
+
+
+def test_finbert_probs_stored():
+    class Base2(FakeBaseline):
+        def score(self, headline):
+            return {"label": "positive", "score": 0.9, "polarity": 0.8, "probs": {"positive": 0.9, "neutral": 0.05, "negative": 0.05}}
+
+    factory = make_session_factory("sqlite://")
+    poll_once(SYMBOLS, [FakeSource("g", [{"title": "A", "pubDate": PUB}])], FakeScorer(), Base2(), ShadowRecorder(factory))
+    with factory() as s:
+        assert s.query(ShadowInference).one().finbert_probs["neutral"] == 0.05

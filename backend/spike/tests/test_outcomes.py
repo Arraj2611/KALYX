@@ -92,16 +92,12 @@ def test_threshold_none_when_history_short():
 
 
 class FakeFetcher:
-    def __init__(self, hourly=None, quarter=None, index_hourly=None):
-        self.hourly, self.quarter, self.index_hourly = hourly, quarter, index_hourly
+    def __init__(self, series=None):
+        self.series = series or {}
 
     def fetch(self, ticker, interval):
         empty = pd.Series(dtype=float, index=pd.DatetimeIndex([], tz="UTC"))
-        if interval == "15m":
-            return empty if self.quarter is None else self.quarter
-        if ticker == "^NSEI":
-            return empty if self.index_hourly is None else self.index_hourly
-        return empty if self.hourly is None else self.hourly
+        return self.series.get((ticker, interval), empty)
 
 
 SYMBOLS = {"RELIANCE": {"symbol": "RELIANCE", "ticker": "RELIANCE.NS", "keywords": ["Reliance"]}}
@@ -113,25 +109,65 @@ def _row(factory, published_at, symbol="RELIANCE", headline="h"):
         s.commit()
 
 
-def test_fill_marks_unfillable_after_three_attempts():
+def _quarter_hour_day(start, prices):
+    idx = pd.DatetimeIndex([start + timedelta(minutes=15 * k) for k in range(len(prices))])
+    return pd.Series(prices, index=idx, dtype=float)
+
+
+def _fetcher(stock_h, index_h, stock_q, index_q):
+    return FakeFetcher({
+        ("RELIANCE.NS", "1h"): stock_h, ("^NSEI", "1h"): index_h,
+        ("RELIANCE.NS", "15m"): stock_q, ("^NSEI", "15m"): index_q,
+    })
+
+
+def test_fill_marks_unfillable_after_three_attempts_when_row_older_than_available_bars():
     factory = make_session_factory("sqlite://")
-    _row(factory, utc(2026, 10, 20, 5, 0))
+    _row(factory, utc(2026, 8, 3, 5, 0))
+    q = _quarter_hour_day(utc(2026, 10, 27, 3, 45), [100.0] * 25)
+    fetcher = _fetcher(q, q, q, q)
     now = utc(2026, 10, 28, 12, 0)
     for _ in range(3):
-        fill_pending(factory, FakeFetcher(), SYMBOLS, now)
+        fill_pending(factory, fetcher, SYMBOLS, now)
     with factory() as s:
         row = s.query(ShadowInference).one()
     assert row.fill_attempts == 3 and row.unfillable is True and row.ret_1h is None
 
 
-def test_fill_sets_returns_and_material():
-    stock, index, end = _history(30)
+def test_price_outage_does_not_burn_attempts():
     factory = make_session_factory("sqlite://")
-    published = utc(2026, 9, 1, 4, 45)  # inside a history day, 10:15 IST
-    _row(factory, published)
-    fill_pending(factory, FakeFetcher(hourly=stock, index_hourly=index), SYMBOLS, end + timedelta(days=3))
+    _row(factory, utc(2026, 10, 20, 5, 0))
+    now = utc(2026, 10, 28, 12, 0)
+    for _ in range(5):
+        counts = fill_pending(factory, FakeFetcher(), SYMBOLS, now)
     with factory() as s:
         row = s.query(ShadowInference).one()
-    assert row.ret_1h == pytest.approx(RETURNS[1])
-    assert row.material is False  # 0.002 is below the 75th percentile 0.005
-    assert row.unfillable is False and row.outcome_filled_at is not None
+    assert row.fill_attempts == 0 and row.unfillable is False and counts["no_data"] == 1
+
+
+def test_ret_1h_measured_from_fine_bars_not_next_hourly_bar():
+    stock_h, index_h, end = _history(30)
+    day = utc(2026, 9, 1, 3, 45)
+    stock_q = _quarter_hour_day(day, [100.0 + k for k in range(25)])
+    index_q = _quarter_hour_day(day, [100.0] * 25)
+    factory = make_session_factory("sqlite://")
+    _row(factory, utc(2026, 9, 1, 5, 10))  # 10:40 IST
+    fill_pending(factory, _fetcher(stock_h, index_h, stock_q, index_q), SYMBOLS, utc(2026, 9, 3, 12, 0))
+    with factory() as s:
+        row = s.query(ShadowInference).one()
+    assert row.ret_1h == pytest.approx(110 / 106 - 1)  # 10:45 IST bar open -> 11:45 IST bar open
+    assert row.material is True  # 4.8% move vs 0.5% threshold
+    assert row.off_hours is False and row.outcome_filled_at is not None
+
+
+def test_off_hours_flag_set_for_after_close_headline():
+    stock_h, index_h, end = _history(30)
+    day = utc(2026, 9, 2, 3, 45)
+    stock_q = _quarter_hour_day(day, [100.0 + k for k in range(25)])
+    index_q = _quarter_hour_day(day, [100.0] * 25)
+    factory = make_session_factory("sqlite://")
+    _row(factory, utc(2026, 9, 1, 12, 0))  # 17:30 IST Tuesday -> aligned to Wed 09:15 IST
+    fill_pending(factory, _fetcher(stock_h, index_h, stock_q, index_q), SYMBOLS, utc(2026, 9, 5, 12, 0))
+    with factory() as s:
+        row = s.query(ShadowInference).one()
+    assert row.off_hours is True and row.ret_1h == pytest.approx(104 / 100 - 1)

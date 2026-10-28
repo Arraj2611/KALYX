@@ -57,3 +57,13 @@ def test_missing_publish_time_returns_none():
 
 def test_hash_ignores_case_and_whitespace():
     assert headline_hash("  Reliance  Q2 Beats ") == headline_hash("reliance q2 beats")
+
+
+def test_millisecond_epoch_parsed_as_ms():
+    _, ts = normalize_headline({"title": "ms epoch", "providerPublishTime": 1788169009000})
+    assert ts == datetime.fromtimestamp(1788169009, tz=UTC)
+
+
+def test_absurd_or_nan_epoch_returns_none_not_raises():
+    assert normalize_headline({"title": "huge", "providerPublishTime": 1e30}) is None
+    assert normalize_headline({"title": "nan", "providerPublishTime": float("nan")}) is None

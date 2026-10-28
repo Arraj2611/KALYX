@@ -1,3 +1,4 @@
+# 'query' (optional) overrides keywords[0] as the news search phrase: short or quoted names match what journalists write.
 # NIFTY 50 constituents, fetched from niftyindices.com/IndexConstituent/ind_nifty50list.csv on 2026-10-28.
 # keywords[0] is the news search phrase (company name without legal suffix).
 - symbol: "ADANIENT"
@@ -6,9 +7,11 @@
 - symbol: "ADANIPORTS"
   ticker: "ADANIPORTS.NS"
   keywords: ["Adani Ports and Special Economic Zone"]
+  query: "\"Adani Ports\""
 - symbol: "APOLLOHOSP"
   ticker: "APOLLOHOSP.NS"
   keywords: ["Apollo Hospitals Enterprise"]
+  query: "\"Apollo Hospitals\""
 - symbol: "ASIANPAINT"
   ticker: "ASIANPAINT.NS"
   keywords: ["Asian Paints"]
@@ -18,6 +21,7 @@
 - symbol: "BSE"
   ticker: "BSE.NS"
   keywords: ["BSE"]
+  query: "\"BSE Ltd\" shares"
 - symbol: "BAJAJ-AUTO"
   ticker: "BAJAJ-AUTO.NS"
   keywords: ["Bajaj Auto"]
@@ -30,6 +34,7 @@
 - symbol: "BEL"
   ticker: "BEL.NS"
   keywords: ["Bharat Electronics"]
+  query: "\"Bharat Electronics\""
 - symbol: "BHARTIARTL"
   ticker: "BHARTIARTL.NS"
   keywords: ["Bharti Airtel"]
@@ -42,12 +47,14 @@
 - symbol: "DRREDDY"
   ticker: "DRREDDY.NS"
   keywords: ["Dr. Reddy's Laboratories"]
+  query: "\"Dr Reddy's\""
 - symbol: "EICHERMOT"
   ticker: "EICHERMOT.NS"
   keywords: ["Eicher Motors"]
 - symbol: "ETERNAL"
   ticker: "ETERNAL.NS"
   keywords: ["Eternal"]
+  query: "Eternal Zomato"
 - symbol: "GRASIM"
   ticker: "GRASIM.NS"
   keywords: ["Grasim Industries"]
@@ -60,6 +67,7 @@
 - symbol: "HDFCLIFE"
   ticker: "HDFCLIFE.NS"
   keywords: ["HDFC Life Insurance Company"]
+  query: "\"HDFC Life\""
 - symbol: "HINDALCO"
   ticker: "HINDALCO.NS"
   keywords: ["Hindalco Industries"]
@@ -72,51 +80,61 @@
 - symbol: "ITC"
   ticker: "ITC.NS"
   keywords: ["ITC"]
+  query: "\"ITC Ltd\""
 - symbol: "INFY"
   ticker: "INFY.NS"
   keywords: ["Infosys"]
 - symbol: "INDIGO"
   ticker: "INDIGO.NS"
   keywords: ["InterGlobe Aviation"]
+  query: "IndiGo InterGlobe"
 - symbol: "JSWSTEEL"
   ticker: "JSWSTEEL.NS"
   keywords: ["JSW Steel"]
 - symbol: "JIOFIN"
   ticker: "JIOFIN.NS"
   keywords: ["Jio Financial Services"]
+  query: "\"Jio Financial\""
 - symbol: "KOTAKBANK"
   ticker: "KOTAKBANK.NS"
   keywords: ["Kotak Mahindra Bank"]
 - symbol: "LT"
   ticker: "LT.NS"
   keywords: ["Larsen & Toubro"]
+  query: "\"Larsen & Toubro\""
 - symbol: "M&M"
   ticker: "M&M.NS"
   keywords: ["Mahindra & Mahindra"]
+  query: "\"Mahindra & Mahindra\""
 - symbol: "MARUTI"
   ticker: "MARUTI.NS"
   keywords: ["Maruti Suzuki India"]
 - symbol: "MAXHEALTH"
   ticker: "MAXHEALTH.NS"
   keywords: ["Max Healthcare Institute"]
+  query: "\"Max Healthcare\""
 - symbol: "NTPC"
   ticker: "NTPC.NS"
   keywords: ["NTPC"]
+  query: "NTPC"
 - symbol: "NESTLEIND"
   ticker: "NESTLEIND.NS"
   keywords: ["Nestle India"]
 - symbol: "ONGC"
   ticker: "ONGC.NS"
   keywords: ["Oil & Natural Gas Corporation"]
+  query: "ONGC"
 - symbol: "POWERGRID"
   ticker: "POWERGRID.NS"
   keywords: ["Power Grid Corporation of India"]
+  query: "\"Power Grid\""
 - symbol: "RELIANCE"
   ticker: "RELIANCE.NS"
   keywords: ["Reliance Industries"]
 - symbol: "SBILIFE"
   ticker: "SBILIFE.NS"
   keywords: ["SBI Life Insurance Company"]
+  query: "\"SBI Life\""
 - symbol: "SHRIRAMFIN"
   ticker: "SHRIRAMFIN.NS"
   keywords: ["Shriram Finance"]
@@ -126,15 +144,18 @@
 - symbol: "SUNPHARMA"
   ticker: "SUNPHARMA.NS"
   keywords: ["Sun Pharmaceutical Industries"]
+  query: "\"Sun Pharma\""
 - symbol: "TCS"
   ticker: "TCS.NS"
   keywords: ["Tata Consultancy Services"]
 - symbol: "TATACONSUM"
   ticker: "TATACONSUM.NS"
   keywords: ["Tata Consumer Products"]
+  query: "\"Tata Consumer\""
 - symbol: "TMPV"
   ticker: "TMPV.NS"
   keywords: ["Tata Motors Passenger Vehicles"]
+  query: "\"Tata Motors\""
 - symbol: "TATASTEEL"
   ticker: "TATASTEEL.NS"
   keywords: ["Tata Steel"]
@@ -144,9 +165,11 @@
 - symbol: "TITAN"
   ticker: "TITAN.NS"
   keywords: ["Titan Company"]
+  query: "\"Titan Company\""
 - symbol: "TRENT"
   ticker: "TRENT.NS"
   keywords: ["Trent"]
+  query: "Trent Tata Westside Zudio"
 - symbol: "ULTRACEMCO"
   ticker: "ULTRACEMCO.NS"
   keywords: ["UltraTech Cement"]

@@ -78,9 +78,10 @@ def test_router_exception_propagates():
         scorer.score("headline", "TCS")
 
 
-@pytest.mark.parametrize("label,expected", [("positive", 0.8), ("negative", -0.8), ("neutral", 0.0)])
-def test_polarity_sign_follows_label(label, expected):
-    baseline = FinBertBaseline(pipeline_factory=lambda: (lambda texts: [{"label": label, "score": 0.8}]))
+def test_baseline_stores_all_probabilities_and_continuous_polarity():
+    probs = [{"label": "positive", "score": 0.7}, {"label": "neutral", "score": 0.2}, {"label": "negative", "score": 0.1}]
+    baseline = FinBertBaseline(pipeline_factory=lambda: (lambda texts, top_k=None: [probs]))
     out = baseline.score("some headline")
-    assert out["label"] == label and out["score"] == 0.8
-    assert out["polarity"] == pytest.approx(expected)
+    assert out["label"] == "positive" and out["score"] == 0.7
+    assert out["probs"] == {"positive": 0.7, "neutral": 0.2, "negative": 0.1}
+    assert out["polarity"] == pytest.approx(0.6)

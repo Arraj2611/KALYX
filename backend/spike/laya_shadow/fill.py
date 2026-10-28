@@ -1,17 +1,19 @@
 """Fill index-adjusted forward returns and the materiality label.
 
-Run daily:  python -m laya_shadow.fill
+Returns are measured on 15-minute bars, so the +1h window starts within 15 minutes of the headline
+(1h bars could start up to 59 minutes late and miss the reaction). The materiality threshold still
+uses the 1h bar distribution. Run daily (15m bars only reach back ~55 days):  python -m laya_shadow.fill
 """
 import json
 import logging
 from datetime import datetime, time, timedelta, timezone
-from typing import Callable, Optional, Protocol
+from typing import Callable, Protocol
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from laya_shadow.models import ShadowInference
-from laya_shadow.outcomes import IST, adjusted_between, adjusted_return, align_t0, materiality_threshold, next_session_time
+from laya_shadow.outcomes import IST, adjusted_between, align_t0, materiality_threshold, next_session_time
 
 logger = logging.getLogger("laya_shadow.fill")
 INDEX_TICKER = "^NSEI"
@@ -47,7 +49,12 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def fill_pending(session_factory: Callable[[], Session], fetcher: PriceFetcher, symbols: dict, now: datetime) -> dict:
-    counts = {"filled": 0, "failed": 0, "unfillable": 0, "not_due": 0, "unknown_symbol": 0}
+    """Fill every due row. Rows are only charged an attempt when price data exists but cannot label them.
+
+    A missing/empty series, or one that ends before t0 + 1h, is a data outage or "too early": the row is
+    skipped without using up an attempt, so an outage cannot silently discard a time-clustered batch.
+    """
+    counts = {"filled": 0, "failed": 0, "unfillable": 0, "not_due": 0, "unknown_symbol": 0, "no_data": 0}
     cache: dict[tuple[str, str], pd.Series] = {}
 
     def series(ticker: str, interval: str) -> pd.Series:
@@ -66,14 +73,21 @@ def fill_pending(session_factory: Callable[[], Session], fetcher: PriceFetcher, 
             if entry is None:
                 counts["unknown_symbol"] += 1
                 continue
-            t0 = align_t0(_as_utc(row.published_at))
+            published = _as_utc(row.published_at)
+            t0 = align_t0(published)
             if t0 + timedelta(days=1, hours=1) > now:
                 counts["not_due"] += 1
                 continue
-            hourly, index_h = series(entry["ticker"], "1h"), series(INDEX_TICKER, "1h")
-            ret_1h = adjusted_return(hourly, index_h, t0, timedelta(hours=1))
-            threshold = materiality_threshold(hourly, index_h, t0)
+            ticker = entry["ticker"]
+            fine, fine_idx = series(ticker, "15m"), series(INDEX_TICKER, "15m")
+            hourly, hourly_idx = series(ticker, "1h"), series(INDEX_TICKER, "1h")
+            horizon_end = t0 + timedelta(hours=1)
+            if min(len(fine), len(fine_idx), len(hourly), len(hourly_idx)) == 0 or fine.index[-1] < horizon_end:
+                counts["no_data"] += 1
+                continue
             row.fill_attempts += 1
+            ret_1h = adjusted_between(fine, fine_idx, t0, horizon_end)
+            threshold = materiality_threshold(hourly, hourly_idx, t0)
             if ret_1h is None or threshold is None:
                 if row.fill_attempts >= MAX_ATTEMPTS:
                     row.unfillable = True
@@ -84,9 +98,10 @@ def fill_pending(session_factory: Callable[[], Session], fetcher: PriceFetcher, 
             eod = datetime.combine(t0.astimezone(IST).date(), time(15, 15), tzinfo=IST).astimezone(timezone.utc)
             row.ret_1h = ret_1h
             row.material = abs(ret_1h) > threshold
-            row.ret_15m = adjusted_return(series(entry["ticker"], "15m"), series(INDEX_TICKER, "15m"), t0, timedelta(minutes=15))
-            row.ret_eod = adjusted_between(hourly, index_h, t0, eod)
-            row.ret_1d = adjusted_between(hourly, index_h, t0, next_session_time(t0))
+            row.off_hours = t0 != published
+            row.ret_15m = adjusted_between(fine, fine_idx, t0, t0 + timedelta(minutes=15))
+            row.ret_eod = adjusted_between(fine, fine_idx, t0, eod)
+            row.ret_1d = adjusted_between(fine, fine_idx, t0, next_session_time(t0))
             row.outcome_filled_at = now
             counts["filled"] += 1
         session.commit()

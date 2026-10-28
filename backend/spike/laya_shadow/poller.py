@@ -52,7 +52,8 @@ class GoogleNewsRss:
 
     @staticmethod
     def url_for(entry: dict) -> str:
-        query = urllib.parse.urlencode({"q": f"{entry['keywords'][0]} when:1d", "hl": "en-IN", "gl": "IN", "ceid": "IN:en"})
+        term = entry.get("query") or entry["keywords"][0]
+        query = urllib.parse.urlencode({"q": f"{term} when:1d", "hl": "en-IN", "gl": "IN", "ceid": "IN:en"})
         return f"https://news.google.com/rss/search?{query}"
 
     def fetch(self, entry: dict) -> list[dict]:
@@ -93,13 +94,18 @@ def load_symbols(path: Path = _SYMBOLS_PATH) -> list[dict]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def poll_once(symbols: list[dict], sources: list[Any], scorer: Any, baseline: Any, recorder: ShadowRecorder) -> dict:
+MAX_ITEMS_PER_SYMBOL = 60
+
+
+def poll_once(
+    symbols: list[dict], sources: list[Any], scorer: Any, baseline: Any, recorder: ShadowRecorder, max_items: int = MAX_ITEMS_PER_SYMBOL
+) -> dict:
     """One pass over all symbols and sources.
 
     Counts: fetched items, recorded rows, duplicates (already stored), dropped_no_time (no usable
     title or publish time), errors (source, scorer or baseline failures).
     """
-    counts = {"fetched": 0, "recorded": 0, "duplicates": 0, "dropped_no_time": 0, "errors": 0}
+    counts: dict = {"fetched": 0, "recorded": 0, "duplicates": 0, "dropped_no_time": 0, "errors": 0, "per_symbol": {}}
     limited: set[str] = set()
     for entry in symbols:
         for source in sources:
@@ -115,28 +121,32 @@ def poll_once(symbols: list[dict], sources: list[Any], scorer: Any, baseline: An
                 counts["errors"] += 1
                 logger.warning("%s fetch failed for %s: %s", source.name, entry["symbol"], exc)
                 continue
-            for item in items:
+            for item in items[:max_items]:
                 counts["fetched"] += 1
-                normalized = normalize_headline(item)
-                if normalized is None:
-                    counts["dropped_no_time"] += 1
-                    continue
-                title, published_at = normalized
-                if recorder.exists(entry["symbol"], title):
-                    counts["duplicates"] += 1
-                    continue
                 try:
+                    normalized = normalize_headline(item)
+                    if normalized is None:
+                        counts["dropped_no_time"] += 1
+                        continue
+                    title, published_at = normalized
+                    if recorder.exists(entry["symbol"], title):
+                        counts["duplicates"] += 1
+                        continue
                     scored = scorer.score(title, entry["symbol"])
                     fb = baseline.score(title)
-                except Exception as exc:
+                    scored = {
+                        **scored,
+                        "finbert_label": fb["label"], "finbert_score": fb["score"],
+                        "finbert_polarity": fb["polarity"], "finbert_probs": fb.get("probs"),
+                    }
+                    if recorder.record(entry["symbol"], title, published_at, source.name, scored):
+                        counts["recorded"] += 1
+                        counts["per_symbol"][entry["symbol"]] = counts["per_symbol"].get(entry["symbol"], 0) + 1
+                    else:
+                        counts["duplicates"] += 1
+                except Exception as exc:  # one bad item must never stop the pass
                     counts["errors"] += 1
-                    logger.warning("scoring failed for %s: %s", entry["symbol"], exc)
-                    continue
-                scored = {**scored, "finbert_label": fb["label"], "finbert_score": fb["score"], "finbert_polarity": fb["polarity"]}
-                if recorder.record(entry["symbol"], title, published_at, source.name, scored):
-                    counts["recorded"] += 1
-                else:
-                    counts["duplicates"] += 1
+                    logger.warning("item failed for %s via %s: %s", entry["symbol"], source.name, exc)
     return counts
 
 
@@ -164,7 +174,10 @@ def main() -> None:
     recorder = ShadowRecorder(make_session_factory())
     while True:
         started = time.monotonic()
-        print(json.dumps(poll_once(symbols, sources, scorer, baseline, recorder)), flush=True)
+        try:
+            print(json.dumps(poll_once(symbols, sources, scorer, baseline, recorder)), flush=True)
+        except Exception:
+            logger.exception("poll pass failed; continuing")
         if args.once:
             return
         time.sleep(max(1.0, args.interval_seconds - (time.monotonic() - started)))
