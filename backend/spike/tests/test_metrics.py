@@ -102,3 +102,32 @@ def test_evaluate_rows_produces_report_and_verdict():
     assert result in {"insufficient_data", "kill", "inconclusive_finetune", "adopt"}
     assert "AUROC" in text and result in text
     assert "off-hours" in text and "clusters" in text
+
+
+def _rows(n, with_body):
+    rng = np.random.default_rng(4)
+    rows = []
+    for i in range(n):
+        material = bool(i % 4 == 0)
+        row = {
+            "material": material, "cluster": f"S|{i}", "off_hours": False, "latency_ms": 50.0,
+            "finbert_polarity": float(rng.normal()), "finbert_probs": None, "ret_1h": 0.01,
+            "ret_15m": None, "ret_eod": None, "ret_1d": None,
+            "answers": {"material": float(rng.random()), "bullish": 0.5, "event_type": {"other_noise": 0.5},
+                        "urgency": {"0": 1.0}},
+        }
+        if with_body:
+            row["body_answers"] = {"material": 0.9 if material else 0.1}
+        rows.append(row)
+    return rows
+
+
+def test_report_shows_what_reading_the_full_text_adds():
+    text, _ = evaluate_rows(_rows(200, with_body=True))
+    line = next(line for line in text.splitlines() if line.startswith("Reading gain"))
+    assert "n=200" in line and "full text AUROC 1.000" in line
+
+
+def test_report_skips_reading_gain_when_too_few_bodies():
+    text, _ = evaluate_rows(_rows(200, with_body=False))
+    assert "Reading gain: fewer than 50 rows" in text

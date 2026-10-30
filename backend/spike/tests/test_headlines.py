@@ -67,3 +67,8 @@ def test_millisecond_epoch_parsed_as_ms():
 def test_absurd_or_nan_epoch_returns_none_not_raises():
     assert normalize_headline({"title": "huge", "providerPublishTime": 1e30}) is None
     assert normalize_headline({"title": "nan", "providerPublishTime": float("nan")}) is None
+
+
+def test_nse_date_read_as_ist():
+    _, ts = normalize_headline({"title": "filing", "pubDate": "30-Oct-2026 21:43:08"})
+    assert ts == datetime(2026, 10, 30, 16, 13, 8, tzinfo=UTC)

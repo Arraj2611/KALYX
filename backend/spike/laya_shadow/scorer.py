@@ -4,6 +4,8 @@ from typing import Any, Callable, Optional
 
 MODEL_NAME = "convaiinnovations/laya"
 MAX_INPUT_LEN = 512
+BODY_MAX_TOKENS = 2048
+BODY_MAX_CHARS = 20_000
 _EVENT_TYPES = {
     "earnings": "quarterly results, guidance, profit or revenue",
     "macro_policy": "interest rates, inflation, budget, central bank",
@@ -57,6 +59,16 @@ def _model_version() -> str:
         return "unknown"
 
 
+def _normalize(result: dict) -> dict:
+    a = result["answers"]
+    return {
+        "event_type": dict(a["event_type"]["probabilities"]),
+        "material": float(a["material_to_symbol"]["noul"]),
+        "bullish": float(a["bullish_for_symbol"]["noul"]),
+        "urgency": {str(k): float(v) for k, v in a["urgency"]["probabilities"].items()},
+    }
+
+
 class LayaScorer:
     """Lazy-loaded Laya wrapper. Exceptions from the model propagate; the poller handles them."""
 
@@ -74,15 +86,32 @@ class LayaScorer:
         start = time.perf_counter()
         result = self._router.predict({"message": text}, build_questions(symbol), model="english")
         latency_ms = (time.perf_counter() - start) * 1000
-        a = result["answers"]
         return {
-            "answers": {
-                "event_type": dict(a["event_type"]["probabilities"]),
-                "material": float(a["material_to_symbol"]["noul"]),
-                "bullish": float(a["bullish_for_symbol"]["noul"]),
-                "urgency": {str(k): float(v) for k, v in a["urgency"]["probabilities"].items()},
-            },
+            "answers": _normalize(result),
             "latency_ms": latency_ms,
             "model_name": MODEL_NAME,
             "model_version": _model_version(),
+        }
+
+    def score_body(self, text: str, symbol: str) -> dict:
+        """Read a whole document in one pass.
+
+        Laya's default budget silently keeps only the first ~400 tokens. ``predict_long`` scans every
+        window but takes the max across them, so its answers drift up with document length; one wide
+        pass stays comparable with the headline score. Longer documents lose their tail, which is
+        reported as tokens_dropped.
+        """
+        self._ensure_loaded()
+        start = time.perf_counter()
+        result = self._router.predict(
+            {"message": text[:BODY_MAX_CHARS]}, build_questions(symbol), model="english", max_len=BODY_MAX_TOKENS
+        )
+        latency_ms = (time.perf_counter() - start) * 1000
+        usage = result.get("usage", {})
+        dropped = usage.get("state_tokens_dropped", 0)
+        return {
+            "answers": _normalize(result),
+            "latency_ms": latency_ms,
+            "tokens_read": usage.get("state_tokens", 0) - dropped,
+            "tokens_dropped": dropped,
         }

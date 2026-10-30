@@ -30,6 +30,22 @@ def _baselines(rows: list[dict]) -> dict[str, np.ndarray]:
     return out
 
 
+def _reading_gain(rows: list[dict], clusters: list) -> str:
+    """Same stories, same labels: does Laya predict materiality better from the full text?"""
+    idx = [i for i, r in enumerate(rows) if r.get("body_answers")]
+    y = np.array([int(rows[i]["material"]) for i in idx])
+    if len(idx) < 50 or len(set(y)) < 2:
+        return f"Reading gain: fewer than 50 rows or one class, skipped (n={len(idx)})"
+    headline = np.array([rows[i]["answers"]["material"] for i in idx])
+    body = np.array([rows[i]["body_answers"]["material"] for i in idx])
+    _, lo, hi = paired_bootstrap_diff(y, body, headline, auroc, clusters=[clusters[i] for i in idx])
+    a_head, a_body = auroc(y, headline), auroc(y, body)
+    return (
+        f"Reading gain (n={len(idx)}): Laya headline AUROC {a_head:.3f}, full text AUROC {a_body:.3f}, "
+        f"diff {a_body - a_head:+.3f}, 95% cluster-bootstrap CI [{lo:+.3f}, {hi:+.3f}]"
+    )
+
+
 def evaluate_rows(rows: list[dict]) -> tuple[str, str]:
     """rows: dicts with material, cluster, off_hours, answers, finbert_polarity (+ finbert_probs), latency_ms, ret_*."""
     n = len(rows)
@@ -62,6 +78,7 @@ def evaluate_rows(rows: list[dict]) -> tuple[str, str]:
         f"Promise checks vs materiality: urgency AUROC {a_urg:.3f} (CI lower bound over chance {urg_lo:+.3f}); "
         f"event_type 1-P(other_noise) AUROC {a_evt:.3f} (lower bound {evt_lo:+.3f})",
         f"Laya latency p50 {latency_p50:.1f} ms (median, robust to the cold first call)",
+        _reading_gain(rows, clusters),
     ]
     for label, flag in (("in-session", False), ("off-hours", True)):
         idx = [i for i, r in enumerate(rows) if bool(r.get("off_hours")) is flag]
@@ -111,7 +128,8 @@ def main() -> None:
         )
         rows = [
             {
-                "material": r.material, "answers": r.answers, "finbert_polarity": r.finbert_polarity or 0.0,
+                "material": r.material, "answers": r.answers, "body_answers": r.body_answers,
+                "finbert_polarity": r.finbert_polarity or 0.0,
                 "finbert_probs": r.finbert_probs, "off_hours": bool(r.off_hours),
                 "cluster": f"{r.symbol}|{align_t0(_as_utc(r.published_at)).isoformat()}",
                 "latency_ms": r.latency_ms, "ret_15m": r.ret_15m, "ret_1h": r.ret_1h,

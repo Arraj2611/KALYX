@@ -29,6 +29,7 @@ def _parse_time(value: Any) -> Optional[datetime]:
         for parse in (
             lambda t: datetime.strptime(t, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc),
             lambda t: datetime.fromisoformat(t.replace("Z", "+00:00")),
+            lambda t: datetime.strptime(t, "%d-%b-%Y %H:%M:%S"),
             parsedate_to_datetime,
         ):
             try:

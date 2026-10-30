@@ -1,6 +1,6 @@
 from laya_shadow.headlines import normalize_headline
 from laya_shadow.models import ShadowInference, make_session_factory
-from laya_shadow.poller import GoogleNewsRss, SourceRateLimited, parse_google_rss, poll_once
+from laya_shadow.poller import GoogleNewsRss, SourceRateLimited, parse_rss, poll_once
 from laya_shadow.recorder import ShadowRecorder
 
 SYMBOLS = [{"symbol": "RELIANCE", "ticker": "RELIANCE.NS", "keywords": ["Reliance Industries"]}]
@@ -101,7 +101,7 @@ RSS = b"""<?xml version="1.0"?><rss><channel>
 
 
 def test_google_rss_item_parsed():
-    items = parse_google_rss(RSS)
+    items = parse_rss(RSS)
     assert len(items) == 2 and items[0]["source"] == "Economic Times"
     title, ts = normalize_headline(items[0])
     assert title == "Reliance profit beats estimates"

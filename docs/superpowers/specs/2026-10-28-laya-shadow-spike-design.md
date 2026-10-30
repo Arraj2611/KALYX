@@ -28,6 +28,32 @@ the spike in its own isolated environment. These changes **supersede** conflicti
   `bullish_for_symbol` and `material_to_symbol` were confidently wrong. Expect
   "inconclusive, fine-tune" as the most likely verdict.
 
+## Amendment 2 (2026-10-30, user decision: read full articles and filings)
+
+Headlines alone are too thin: on 1,485 stored headlines only about 32% carry a hard number and
+Google News links never reach the article. The collector now also reads whole documents:
+
+- **Sources added:** Economic Times, Livemint and Business Standard market feeds, plus NSE announcements
+  with their PDF filings. Google News stays as headline-only coverage. Feeds run first so a row with
+  full text wins over Google's duplicate.
+- **Excluded on purpose:** CNBC and Moneycontrol, whose robots.txt refuses AI agents. MarketWatch
+  returned 401.
+- **Rules:** honest User-Agent, robots.txt honoured (including rules aimed at AI agents), allowlisted
+  hosts only, one-second gap between documents, size caps. Publisher terms of use are still unread.
+- **Storage:** full text is not kept. Each row stores the URL, a hash, Laya's answers on the full text,
+  token counts, and up to 12 numbers with a few words of context. The cost is that a new model cannot
+  be re-run on old articles without fetching them again.
+- **Reading:** `predict` with `max_len=2048`, one pass per document. Laya's default keeps only the first
+  ~400 tokens. `predict_long` was rejected because its max-across-windows answers drift up with document
+  length, which would make full-text and headline scores incomparable. Documents past 2,048 tokens lose
+  their tail, reported as `body_tokens_dropped`.
+- **What gets read:** every new item naming a NIFTY 50 company, not only high-scoring headlines, because
+  triage itself is under test. Items naming more than three companies are market wraps and are skipped.
+- **New metric:** "Reading gain" in `evaluate`: Laya's materiality AUROC from full text vs headline on the
+  same rows, with a cluster-bootstrap CI. It does not change the verdict.
+- **Not done:** OCR for scanned PDFs (status `no_text`), ZIP and XML filings (status `unsupported`),
+  comparison with consensus expectations.
+
 ## Intent and why
 
 KALYX scores news with FinBERT (`intelligence/sentiment/finbert.py`), called from

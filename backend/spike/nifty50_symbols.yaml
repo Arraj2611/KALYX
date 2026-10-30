@@ -1,175 +1,226 @@
+# 'aliases' are case-sensitive names used to spot this company in market-wide article titles.
 # 'query' (optional) overrides keywords[0] as the news search phrase: short or quoted names match what journalists write.
 # NIFTY 50 constituents, fetched from niftyindices.com/IndexConstituent/ind_nifty50list.csv on 2026-10-28.
 # keywords[0] is the news search phrase (company name without legal suffix).
 - symbol: "ADANIENT"
   ticker: "ADANIENT.NS"
   keywords: ["Adani Enterprises"]
+  aliases: ["Adani Enterprises"]
 - symbol: "ADANIPORTS"
   ticker: "ADANIPORTS.NS"
   keywords: ["Adani Ports and Special Economic Zone"]
+  aliases: ["Adani Ports", "APSEZ"]
   query: "\"Adani Ports\""
 - symbol: "APOLLOHOSP"
   ticker: "APOLLOHOSP.NS"
   keywords: ["Apollo Hospitals Enterprise"]
+  aliases: ["Apollo Hospitals"]
   query: "\"Apollo Hospitals\""
 - symbol: "ASIANPAINT"
   ticker: "ASIANPAINT.NS"
   keywords: ["Asian Paints"]
+  aliases: ["Asian Paints"]
 - symbol: "AXISBANK"
   ticker: "AXISBANK.NS"
   keywords: ["Axis Bank"]
+  aliases: ["Axis Bank"]
 - symbol: "BSE"
   ticker: "BSE.NS"
   keywords: ["BSE"]
+  aliases: ["BSE Ltd"]
   query: "\"BSE Ltd\" shares"
 - symbol: "BAJAJ-AUTO"
   ticker: "BAJAJ-AUTO.NS"
   keywords: ["Bajaj Auto"]
+  aliases: ["Bajaj Auto"]
 - symbol: "BAJFINANCE"
   ticker: "BAJFINANCE.NS"
   keywords: ["Bajaj Finance"]
+  aliases: ["Bajaj Finance"]
 - symbol: "BAJAJFINSV"
   ticker: "BAJAJFINSV.NS"
   keywords: ["Bajaj Finserv"]
+  aliases: ["Bajaj Finserv"]
 - symbol: "BEL"
   ticker: "BEL.NS"
   keywords: ["Bharat Electronics"]
+  aliases: ["Bharat Electronics", "BEL"]
   query: "\"Bharat Electronics\""
 - symbol: "BHARTIARTL"
   ticker: "BHARTIARTL.NS"
   keywords: ["Bharti Airtel"]
+  aliases: ["Bharti Airtel", "Airtel"]
 - symbol: "CIPLA"
   ticker: "CIPLA.NS"
   keywords: ["Cipla"]
+  aliases: ["Cipla"]
 - symbol: "COALINDIA"
   ticker: "COALINDIA.NS"
   keywords: ["Coal India"]
+  aliases: ["Coal India"]
 - symbol: "DRREDDY"
   ticker: "DRREDDY.NS"
   keywords: ["Dr. Reddy's Laboratories"]
+  aliases: ["Dr Reddy's", "Dr. Reddy's", "Dr Reddys"]
   query: "\"Dr Reddy's\""
 - symbol: "EICHERMOT"
   ticker: "EICHERMOT.NS"
   keywords: ["Eicher Motors"]
+  aliases: ["Eicher Motors", "Royal Enfield"]
 - symbol: "ETERNAL"
   ticker: "ETERNAL.NS"
   keywords: ["Eternal"]
+  aliases: ["Eternal", "Zomato", "Blinkit"]
   query: "Eternal Zomato"
 - symbol: "GRASIM"
   ticker: "GRASIM.NS"
   keywords: ["Grasim Industries"]
+  aliases: ["Grasim"]
 - symbol: "HCLTECH"
   ticker: "HCLTECH.NS"
   keywords: ["HCL Technologies"]
+  aliases: ["HCLTech", "HCL Tech", "HCL Technologies"]
 - symbol: "HDFCBANK"
   ticker: "HDFCBANK.NS"
   keywords: ["HDFC Bank"]
+  aliases: ["HDFC Bank"]
 - symbol: "HDFCLIFE"
   ticker: "HDFCLIFE.NS"
   keywords: ["HDFC Life Insurance Company"]
+  aliases: ["HDFC Life"]
   query: "\"HDFC Life\""
 - symbol: "HINDALCO"
   ticker: "HINDALCO.NS"
   keywords: ["Hindalco Industries"]
+  aliases: ["Hindalco", "Novelis"]
 - symbol: "HINDUNILVR"
   ticker: "HINDUNILVR.NS"
   keywords: ["Hindustan Unilever"]
+  aliases: ["Hindustan Unilever", "HUL"]
 - symbol: "ICICIBANK"
   ticker: "ICICIBANK.NS"
   keywords: ["ICICI Bank"]
+  aliases: ["ICICI Bank"]
 - symbol: "ITC"
   ticker: "ITC.NS"
   keywords: ["ITC"]
+  aliases: ["ITC"]
   query: "\"ITC Ltd\""
 - symbol: "INFY"
   ticker: "INFY.NS"
   keywords: ["Infosys"]
+  aliases: ["Infosys"]
 - symbol: "INDIGO"
   ticker: "INDIGO.NS"
   keywords: ["InterGlobe Aviation"]
+  aliases: ["IndiGo", "InterGlobe Aviation"]
   query: "IndiGo InterGlobe"
 - symbol: "JSWSTEEL"
   ticker: "JSWSTEEL.NS"
   keywords: ["JSW Steel"]
+  aliases: ["JSW Steel"]
 - symbol: "JIOFIN"
   ticker: "JIOFIN.NS"
   keywords: ["Jio Financial Services"]
+  aliases: ["Jio Financial", "Jio Finance"]
   query: "\"Jio Financial\""
 - symbol: "KOTAKBANK"
   ticker: "KOTAKBANK.NS"
   keywords: ["Kotak Mahindra Bank"]
+  aliases: ["Kotak Mahindra Bank", "Kotak Bank"]
 - symbol: "LT"
   ticker: "LT.NS"
   keywords: ["Larsen & Toubro"]
+  aliases: ["Larsen & Toubro", "L&T"]
   query: "\"Larsen & Toubro\""
 - symbol: "M&M"
   ticker: "M&M.NS"
   keywords: ["Mahindra & Mahindra"]
+  aliases: ["Mahindra & Mahindra", "M&M"]
   query: "\"Mahindra & Mahindra\""
 - symbol: "MARUTI"
   ticker: "MARUTI.NS"
   keywords: ["Maruti Suzuki India"]
+  aliases: ["Maruti Suzuki", "Maruti"]
 - symbol: "MAXHEALTH"
   ticker: "MAXHEALTH.NS"
   keywords: ["Max Healthcare Institute"]
+  aliases: ["Max Healthcare"]
   query: "\"Max Healthcare\""
 - symbol: "NTPC"
   ticker: "NTPC.NS"
   keywords: ["NTPC"]
+  aliases: ["NTPC"]
   query: "NTPC"
 - symbol: "NESTLEIND"
   ticker: "NESTLEIND.NS"
   keywords: ["Nestle India"]
+  aliases: ["Nestle India"]
 - symbol: "ONGC"
   ticker: "ONGC.NS"
   keywords: ["Oil & Natural Gas Corporation"]
+  aliases: ["ONGC"]
   query: "ONGC"
 - symbol: "POWERGRID"
   ticker: "POWERGRID.NS"
   keywords: ["Power Grid Corporation of India"]
+  aliases: ["Power Grid", "PowerGrid"]
   query: "\"Power Grid\""
 - symbol: "RELIANCE"
   ticker: "RELIANCE.NS"
   keywords: ["Reliance Industries"]
+  aliases: ["Reliance Industries", "RIL"]
 - symbol: "SBILIFE"
   ticker: "SBILIFE.NS"
   keywords: ["SBI Life Insurance Company"]
+  aliases: ["SBI Life"]
   query: "\"SBI Life\""
 - symbol: "SHRIRAMFIN"
   ticker: "SHRIRAMFIN.NS"
   keywords: ["Shriram Finance"]
+  aliases: ["Shriram Finance"]
 - symbol: "SBIN"
   ticker: "SBIN.NS"
   keywords: ["State Bank of India"]
+  aliases: ["State Bank of India", "SBI"]
 - symbol: "SUNPHARMA"
   ticker: "SUNPHARMA.NS"
   keywords: ["Sun Pharmaceutical Industries"]
+  aliases: ["Sun Pharma"]
   query: "\"Sun Pharma\""
 - symbol: "TCS"
   ticker: "TCS.NS"
   keywords: ["Tata Consultancy Services"]
+  aliases: ["TCS", "Tata Consultancy"]
 - symbol: "TATACONSUM"
   ticker: "TATACONSUM.NS"
   keywords: ["Tata Consumer Products"]
+  aliases: ["Tata Consumer"]
   query: "\"Tata Consumer\""
 - symbol: "TMPV"
   ticker: "TMPV.NS"
   keywords: ["Tata Motors Passenger Vehicles"]
+  aliases: ["Tata Motors"]
   query: "\"Tata Motors\""
 - symbol: "TATASTEEL"
   ticker: "TATASTEEL.NS"
   keywords: ["Tata Steel"]
+  aliases: ["Tata Steel"]
 - symbol: "TECHM"
   ticker: "TECHM.NS"
   keywords: ["Tech Mahindra"]
+  aliases: ["Tech Mahindra"]
 - symbol: "TITAN"
   ticker: "TITAN.NS"
   keywords: ["Titan Company"]
+  aliases: ["Titan"]
   query: "\"Titan Company\""
 - symbol: "TRENT"
   ticker: "TRENT.NS"
   keywords: ["Trent"]
+  aliases: ["Trent"]
   query: "Trent Tata Westside Zudio"
 - symbol: "ULTRACEMCO"
   ticker: "ULTRACEMCO.NS"
   keywords: ["UltraTech Cement"]
+  aliases: ["UltraTech Cement", "UltraTech", "Ultratech"]
