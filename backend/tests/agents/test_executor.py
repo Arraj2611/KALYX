@@ -140,3 +140,105 @@ async def test_executor_handles_order_failure(executor, context, mock_adapter):
     output = await executor.run(context)
 
     assert output.action == "FAILED"
+
+
+# ---------------------------------------------------------------------------
+# Market price, fills, and exits
+# ---------------------------------------------------------------------------
+
+
+def held(quantity, average_price=100.0):
+    from app.brokers.base import Position
+
+    return Position(
+        symbol="NIFTY25APR24500CE", exchange="NSE", segment="FNO", quantity=quantity,
+        average_price=average_price, last_price=average_price, pnl=0.0, product="MIS", broker_name="paper",
+    )
+
+
+def order_sent(mock_adapter):
+    call = mock_adapter.place_order.call_args
+    return call.args[0] if call.args else call.kwargs["order"]
+
+
+def logged(mock_decision_logger):
+    return mock_decision_logger.log_decision.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_market_order_does_not_carry_the_models_price_guess(executor, context, mock_adapter):
+    context.signals["entry_price"] = 123.0
+    await executor.run(context)
+    assert order_sent(mock_adapter).price is None
+
+
+@pytest.mark.asyncio
+async def test_entry_reports_fill_price_side_quantity_and_decision_id(executor, context, mock_adapter):
+    mock_adapter.place_order.return_value = OrderResult("PAPER-001", "COMPLETE", "paper", {"fill_price": 151.0})
+    output = await executor.run(context)
+    assert output.data["fill_price"] == 151.0 and output.data["side"] == "BUY"
+    assert output.data["quantity"] == 50 and output.data["decision_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fill_price_falls_back_to_the_last_price(executor, context):
+    assert (await executor.run(context)).data["fill_price"] == 150.0
+
+
+@pytest.mark.asyncio
+async def test_exit_closes_a_long_with_the_position_quantity_and_reports_realised_pnl(
+    executor, context, mock_adapter, mock_decision_logger
+):
+    context.signals["signal"] = "EXIT"
+    context.guardian_verdict = {"exit": True}
+    context.positions = [held(3)]
+    mock_adapter.place_order.return_value = OrderResult("PAPER-002", "COMPLETE", "paper", {"fill_price": 105.0})
+
+    output = await executor.run(context)
+
+    order = order_sent(mock_adapter)
+    assert (order.transaction_type, order.quantity) == ("SELL", 3)
+    assert output.action == "EXECUTE" and output.data["realised_pnl"] == pytest.approx(15.0)
+    assert logged(mock_decision_logger)["market_state"]["realised_pnl"] == pytest.approx(15.0)
+    assert logged(mock_decision_logger)["signal"] == "EXIT"
+
+
+@pytest.mark.asyncio
+async def test_exit_closes_a_short_by_buying_back(executor, context, mock_adapter):
+    context.signals["signal"] = "EXIT"
+    context.positions = [held(-3)]
+    mock_adapter.place_order.return_value = OrderResult("PAPER-002", "COMPLETE", "paper", {"fill_price": 95.0})
+
+    output = await executor.run(context)
+
+    order = order_sent(mock_adapter)
+    assert (order.transaction_type, order.quantity) == ("BUY", 3)
+    assert output.data["realised_pnl"] == pytest.approx(15.0)
+
+
+@pytest.mark.asyncio
+async def test_exit_with_no_position_places_nothing_and_logs_a_skip(executor, context, mock_adapter, mock_decision_logger):
+    context.signals["signal"] = "EXIT"
+
+    output = await executor.run(context)
+
+    mock_adapter.place_order.assert_not_called()
+    assert output.action == "SKIP"
+    assert logged(mock_decision_logger)["action"] == DecisionAction.SKIPPED
+    assert logged(mock_decision_logger)["skip_reason"] == "no_position_to_exit"
+
+
+@pytest.mark.asyncio
+async def test_exit_pnl_uses_the_position_as_it_was_before_the_order(executor, context, mock_adapter):
+    """An adapter may flatten the very object it handed out; P&L must not read it afterwards."""
+    position = held(3)
+
+    async def fill_and_flatten(order):
+        position.quantity, position.average_price = 0, 0.0
+        return OrderResult("PAPER-002", "COMPLETE", "paper", {"fill_price": 105.0})
+
+    mock_adapter.place_order = fill_and_flatten
+    context.signals["signal"] = "EXIT"
+    context.positions = [position]
+
+    assert (await executor.run(context)).data["realised_pnl"] == pytest.approx(15.0)

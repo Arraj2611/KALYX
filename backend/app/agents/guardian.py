@@ -2,7 +2,8 @@
 GuardianAgent — math-based risk checks, no LLM.
 
 Evaluates each potential trade against hard risk limits before execution.
-Checks run in a fixed order: daily loss → capital usage → confidence.
+Checks run in a fixed order: daily loss → capital usage → confidence → trades per day →
+one position per symbol → stop-loss → concentration. An EXIT is always allowed.
 Any failure is an immediate BLOCK. All errors are also BLOCKs (fail-safe).
 
 Position sizing is confidence-tiered:
@@ -14,10 +15,20 @@ Position sizing is confidence-tiered:
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
 from app.agents.base import AgentContext, AgentOutput, BaseAgent
+
+
+def as_price(value: Any) -> float | None:
+    """A positive finite number, or None for anything else (missing, zero, text, NaN)."""
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if math.isfinite(price) and price > 0 else None
 
 
 class GuardianAgent(BaseAgent):
@@ -68,6 +79,23 @@ class GuardianAgent(BaseAgent):
         """
         start = time.perf_counter()
         try:
+            signal = str(context.signals.get("signal", "")).upper()
+            if signal == "EXIT":
+                # Closing a position only ever reduces risk, so no limit may stand in its way.
+                return AgentOutput(
+                    agent_name=self.name,
+                    action="ALLOW",
+                    data={"exit": True},
+                    reasoning="Exit reduces risk; risk limits do not apply.",
+                    confidence=float(context.signals.get("confidence", 0.0)),
+                    llm_tier_used=None,
+                    latency_ms=(time.perf_counter() - start) * 1000.0,
+                )
+            if signal not in ("BUY", "SELL"):
+                return self._block(
+                    start, reason="unknown_signal", reasoning=f"Cannot trade on signal '{signal}'."
+                )
+
             # 1. Daily loss check
             daily_pnl = sum(
                 d.get("pnl", 0.0) for d in context.recent_decisions
@@ -111,8 +139,57 @@ class GuardianAgent(BaseAgent):
                     ),
                 )
 
-            # All checks passed — compute position size and allow
             position_size = self._compute_position_size(confidence)
+
+            # 4. Trades per day (entries only; exits do not count)
+            trades_today = sum(
+                1
+                for d in context.recent_decisions
+                if str(d.get("action", "")).lower() == "executed"
+                and d.get("signal") in ("BUY", "SELL")
+            )
+            if trades_today >= self.max_trades_day:
+                return self._block(
+                    start,
+                    reason="max_trades_reached",
+                    reasoning=f"{trades_today} trades today; limit is {self.max_trades_day}.",
+                )
+
+            # 5. One position per symbol: pyramiding or flipping must go through an EXIT first
+            if any(p.symbol == context.symbol and p.quantity != 0 for p in context.positions):
+                return self._block(
+                    start,
+                    reason="position_exists",
+                    reasoning=f"Already holding {context.symbol}; close it before opening another.",
+                )
+
+            # 6. A stop-loss must exist and sit on the losing side of the current price
+            ltp = as_price(context.market_state.get("ltp"))
+            stop = as_price(context.signals.get("stoploss"))
+            if stop is None:
+                return self._block(
+                    start, reason="no_stoploss", reasoning="Entry signal carries no usable stop-loss."
+                )
+            if ltp is None or (signal == "BUY" and stop >= ltp) or (signal == "SELL" and stop <= ltp):
+                return self._block(
+                    start,
+                    reason="invalid_stoploss",
+                    reasoning=f"Stop {stop} is on the wrong side of price {ltp} for a {signal}.",
+                )
+
+            # 7. Concentration: the new position's value against total capital
+            if total > 0:
+                concentration_pct = ltp * position_size / total * 100.0
+                if concentration_pct > self.max_position_concentration_pct:
+                    return self._block(
+                        start,
+                        reason="concentration_exceeded",
+                        reasoning=(
+                            f"Position would be {concentration_pct:.2f}% of capital; "
+                            f"limit is {self.max_position_concentration_pct:.2f}%."
+                        ),
+                    )
+
             latency_ms = (time.perf_counter() - start) * 1000.0
             return AgentOutput(
                 agent_name=self.name,

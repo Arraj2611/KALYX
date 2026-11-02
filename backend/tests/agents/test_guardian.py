@@ -47,12 +47,12 @@ def make_context(
     return AgentContext(
         account_name="test_account",
         symbol="NIFTY",
-        market_state={},
+        market_state={"ltp": 100.0},
         positions=[],
         margins=margins,
         recent_decisions=[{"pnl": daily_pnl}],
         memory_recall=[],
-        signals={"confidence": confidence},
+        signals={"signal": "BUY", "confidence": confidence, "stoploss": 95.0},
         debate_result=None,
         guardian_verdict=None,
         config=GUARDIAN_CONFIG,
@@ -203,3 +203,93 @@ def test_guardian_is_base_agent():
     """GuardianAgent must be a subclass of BaseAgent."""
     guardian = GuardianAgent(config=GUARDIAN_CONFIG, account_name="test_account")
     assert isinstance(guardian, BaseAgent)
+
+
+
+# ---------------------------------------------------------------------------
+# Limits that were configured but not enforced, and the exit rule
+# ---------------------------------------------------------------------------
+
+
+def guarded(**overrides):
+    config = {**GUARDIAN_CONFIG, **overrides}
+    return GuardianAgent(config=config, account_name="test_account")
+
+
+def entry_context(**changes):
+    context = make_context(daily_pnl=0.0, confidence=0.8, available_cash=200000.0, used_margin=100000.0)
+    for name, value in changes.items():
+        setattr(context, name, value)
+    return context
+
+
+def position(symbol="NIFTY", quantity=3):
+    from app.brokers.base import Position
+
+    return Position(
+        symbol=symbol, exchange="NSE", segment="CASH", quantity=quantity, average_price=100.0,
+        last_price=100.0, pnl=0.0, product="MIS", broker_name="paper",
+    )
+
+
+def test_exit_is_allowed_even_when_every_limit_is_breached():
+    context = make_context(daily_pnl=-10_000_000.0, confidence=0.1, available_cash=0.0, used_margin=300000.0)
+    context.signals = {"signal": "EXIT", "confidence": 0.1}
+    result = guarded().run(context)
+    assert result.action == "ALLOW" and result.data["exit"] is True
+
+
+def test_unknown_signal_is_blocked():
+    context = entry_context(signals={"signal": "HOLD", "confidence": 0.9, "stoploss": 95.0})
+    assert guarded().run(context).data["reason"] == "unknown_signal"
+
+
+def test_max_trades_blocks_when_reached_and_counts_entries_only():
+    rows = [{"action": "executed", "signal": "BUY", "pnl": 0.0}, {"action": "executed", "signal": "EXIT", "pnl": 5.0}]
+    context = entry_context(recent_decisions=rows)
+    assert guarded(max_trades_day=1).run(context).data["reason"] == "max_trades_reached"
+    assert guarded(max_trades_day=2).run(context).action == "ALLOW"
+
+
+def test_existing_position_blocks_a_new_entry_in_either_direction():
+    for quantity in (3, -3):
+        context = entry_context(positions=[position(quantity=quantity)])
+        assert guarded().run(context).data["reason"] == "position_exists"
+
+
+def test_position_in_another_symbol_does_not_block():
+    context = entry_context(positions=[position(symbol="RELIANCE")])
+    assert guarded().run(context).action == "ALLOW"
+
+
+@pytest.mark.parametrize(
+    "signal,stop,reason",
+    [
+        ("BUY", None, "no_stoploss"),
+        ("BUY", 0, "no_stoploss"),
+        ("BUY", "tight", "no_stoploss"),
+        ("BUY", float("nan"), "no_stoploss"),
+        ("BUY", 100.0, "invalid_stoploss"),
+        ("BUY", 105.0, "invalid_stoploss"),
+        ("SELL", 95.0, "invalid_stoploss"),
+    ],
+)
+def test_entry_needs_a_stop_on_the_losing_side(signal, stop, reason):
+    context = entry_context(signals={"signal": signal, "confidence": 0.8, "stoploss": stop})
+    assert guarded().run(context).data["reason"] == reason
+
+
+def test_short_entry_with_stop_above_price_is_allowed():
+    context = entry_context(signals={"signal": "SELL", "confidence": 0.8, "stoploss": 105.0})
+    assert guarded().run(context).action == "ALLOW"
+
+
+def test_entry_without_a_price_is_blocked():
+    context = entry_context(market_state={"ltp": 0})
+    assert guarded().run(context).data["reason"] == "invalid_stoploss"
+
+
+def test_concentration_blocks_a_position_that_is_too_large():
+    # 3 lots at 100 against 300,000 total capital is 0.1%
+    assert guarded(max_position_concentration_pct=0.05).run(entry_context()).data["reason"] == "concentration_exceeded"
+    assert guarded(max_position_concentration_pct=0.5).run(entry_context()).action == "ALLOW"
