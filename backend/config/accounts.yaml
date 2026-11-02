@@ -41,8 +41,9 @@ accounts:
       memory:
         recall_limit: 10
       llm:
-        quick_model: deepseek-v4-flash
-        deep_model: deepseek-v4-flash
+        # llama3 is installed in local Ollama and was used for the first real paper cycle.
+        quick_model: llama3
+        deep_model: llama3
         ollama_base_url: http://localhost:11434
       prompts_dir: prompts/defaults/
       intelligence:
