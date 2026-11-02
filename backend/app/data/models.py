@@ -1,7 +1,7 @@
 """
 Database models for KALYX trading system.
 """
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -157,9 +157,7 @@ class MarketData(Base):
     
     # Composite index for efficient queries
     __table_args__ = (
-        {"postgresql_indexes": [
-            {"name": "idx_market_data_token_time", "columns": ["instrument_token", "timestamp"]},
-            {"name": "idx_market_data_symbol_time", "columns": ["tradingsymbol", "timestamp"]},
-        ]},
+        Index("idx_market_data_token_time", "instrument_token", "timestamp"),
+        Index("idx_market_data_symbol_time", "tradingsymbol", "timestamp"),
     )
 
