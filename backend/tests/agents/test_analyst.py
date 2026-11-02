@@ -143,9 +143,7 @@ async def test_analyst_includes_memory_in_prompt(analyst, context, mock_llm_rout
 
     mock_llm_router.generate.assert_called_once()
     call_kwargs = mock_llm_router.generate.call_args
-    # grab the user_prompt kwarg that BaseAgent.think passes
-    user_prompt = call_kwargs.kwargs.get("user_prompt") or call_kwargs.args[0]
-    assert "RSI works below 30" in user_prompt
+    assert "RSI works below 30" in call_kwargs.kwargs["prompt"]
 
 
 def test_analyst_is_base_agent(analyst):
@@ -194,12 +192,7 @@ async def test_analyst_uses_intelligence_when_provided(mock_llm_router, tmp_path
     await analyst.run(context)
     builder.build.assert_called_once()
     call_args = mock_llm_router.generate.call_args
-    # think() passes prompt as user_prompt kwarg
-    prompt = (
-        call_args[1].get("user_prompt")
-        or call_args[1].get("prompt")
-        or (call_args[0][0] if call_args[0] else "")
-    )
+    prompt = call_args.kwargs["prompt"]
     assert "Polymarket" in prompt
     assert "fed-rate-cut" in prompt
     assert "Aggregated polarity" in prompt
@@ -233,3 +226,22 @@ async def test_analyst_handles_intelligence_build_failure(mock_llm_router, tmp_p
 
     output = await analyst.run(context)
     assert output.action == "SIGNAL"
+
+
+@pytest.mark.asyncio
+async def test_think_calls_the_real_router_signature(tmp_path):
+    """An autospecced LLMRouter rejects arguments the real generate() does not take.
+
+    A plain AsyncMock accepts anything, which is how think() shipped calling generate(user_prompt=...)
+    against a method that takes prompt.
+    """
+    from unittest.mock import create_autospec
+
+    from app.agents.llm_router import LLMRouter
+
+    router = create_autospec(LLMRouter, instance=True)
+    router.generate.return_value = BUY_RESPONSE
+    agent = AnalystAgent(router, str(tmp_path), "acct")
+
+    assert await agent.think("hello") == BUY_RESPONSE
+    router.generate.assert_awaited_once_with(prompt="hello", system_prompt=agent.system_prompt, tier="quick")

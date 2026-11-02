@@ -113,15 +113,15 @@ class BaseAgent(abc.ABC):
     # LLM interaction
     # ------------------------------------------------------------------
 
-    def think(self, prompt: str, tier: Optional[str] = None) -> str:
+    async def think(self, prompt: str, tier: Optional[str] = None) -> str:
         """Send a prompt to the LLM router and return the response text.
 
         Uses the agent's default tier unless overridden.
         """
         chosen_tier = tier or self.llm_tier
-        return self.llm_router.generate(
+        return await self.llm_router.generate(
+            prompt=prompt,
             system_prompt=self.system_prompt,
-            user_prompt=prompt,
             tier=chosen_tier,
         )
 

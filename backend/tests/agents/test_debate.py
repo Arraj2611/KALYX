@@ -176,8 +176,7 @@ async def test_judge_anonymizes_arguments(judge, context, mock_llm_router):
 
     mock_llm_router.generate.assert_called_once()
     call_kwargs = mock_llm_router.generate.call_args
-    # Extract the user_prompt / first positional arg
-    prompt_text = call_kwargs.kwargs.get("user_prompt") or call_kwargs.args[0]
+    prompt_text = call_kwargs.kwargs["prompt"]
 
     assert "bullish" not in prompt_text.lower() or "Argument" in prompt_text
     # The labels must appear
