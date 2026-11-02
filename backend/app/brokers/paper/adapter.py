@@ -7,10 +7,12 @@ strategies can run against it without touching a real broker.
 
 from __future__ import annotations
 
+import logging
 import random
 import string
+from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from app.brokers.base import (
     AuthResult,
@@ -29,6 +31,12 @@ from app.brokers.base import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+# async (symbols) -> {symbol: last traded price}; symbols it cannot price are left out
+PriceSource = Callable[[list[str]], Awaitable[dict[str, float]]]
+
+
 def _generate_order_id() -> str:
     """Generate a unique PAPER-XXXXXX order identifier."""
     suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -44,10 +52,19 @@ class PaperAdapter(BrokerAdapter):
         ``initial_capital``  — starting cash (default 1 000 000).
         ``slippage_pct``     — one-way slippage as a percentage (default 0.05,
                                meaning 0.05 % per side).
+    price_source : optional
+        Async callable giving live prices. With it, market orders fill at the market
+        price (not the price the caller guessed), ``get_ltp`` is live and open
+        positions are marked to market. Without it, behaviour is unchanged.
     """
 
-    def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[dict[str, Any]] = None,
+        price_source: Optional[PriceSource] = None,
+    ) -> None:
         cfg = config or {}
+        self._price_source = price_source
         self._initial_capital: float = float(cfg.get("initial_capital", 1_000_000))
         self._slippage_pct: float = float(cfg.get("slippage_pct", 0.05))
 
@@ -118,7 +135,8 @@ class PaperAdapter(BrokerAdapter):
 
     async def place_order(self, order: UnifiedOrder) -> OrderResult:
         """Fill immediately at price ± slippage; update positions and margin."""
-        raw_price = order.price or 0.0
+        market = await self._market_prices([order.symbol])
+        raw_price = market.get(order.symbol) or order.price or 0.0
         slip_factor = self._slippage_pct / 100.0
 
         if order.transaction_type == "BUY":
@@ -189,8 +207,15 @@ class PaperAdapter(BrokerAdapter):
     # ------------------------------------------------------------------
 
     async def get_positions(self) -> list[Position]:
-        """Return positions with non-zero quantity."""
-        return [p for p in self._positions.values() if p.quantity != 0]
+        """Return positions with non-zero quantity, marked to market when a price source exists."""
+        open_positions = [p for p in self._positions.values() if p.quantity != 0]
+        live = await self._market_prices([p.symbol for p in open_positions])
+        for position in open_positions:
+            price = live.get(position.symbol)
+            if price:
+                position.last_price = price
+                position.pnl = (price - position.average_price) * position.quantity
+        return [replace(position) for position in open_positions]  # snapshots, not live objects
 
     async def get_holdings(self) -> list[Holding]:
         """Paper trading has no demat holdings."""
@@ -211,11 +236,11 @@ class PaperAdapter(BrokerAdapter):
     # ------------------------------------------------------------------
 
     async def get_ltp(self, symbols: list[str]) -> dict[str, float]:
-        # Return last fill price per symbol from positions, else 0
+        # Live price when a source is configured, else the last price seen for the position, else 0
+        live = await self._market_prices(symbols)
         return {
-            sym: self._positions[sym].average_price
-            if sym in self._positions
-            else 0.0
+            sym: live.get(sym)
+            or (self._positions[sym].last_price if sym in self._positions else 0.0)
             for sym in symbols
         }
 
@@ -258,6 +283,17 @@ class PaperAdapter(BrokerAdapter):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _market_prices(self, symbols: list[str]) -> dict[str, float]:
+        """Live prices for the symbols; empty when there is no source or it fails."""
+        if self._price_source is None or not symbols:
+            return {}
+        try:
+            prices = await self._price_source(list(symbols))
+        except Exception as exc:
+            logger.warning("Paper price source failed: %s", exc)
+            return {}
+        return {sym: price for sym, price in prices.items() if price and price > 0}
 
     def _update_position(self, order: UnifiedOrder, fill_price: float) -> None:
         """Update in-memory position and margin accounting."""

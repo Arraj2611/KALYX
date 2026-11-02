@@ -223,3 +223,83 @@ async def test_paper_holdings_empty(adapter):
     await adapter.login(credentials={})
     holdings = await adapter.get_holdings()
     assert holdings == []
+
+
+# ---------------------------------------------------------------------------
+# Optional market price source
+# ---------------------------------------------------------------------------
+
+
+class Prices:
+    def __init__(self, **prices):
+        self.prices, self.fail = dict(prices), False
+
+    async def __call__(self, symbols):
+        if self.fail:
+            raise RuntimeError("price feed down")
+        return {s: self.prices[s] for s in symbols if s in self.prices}
+
+
+def market_order(symbol="RELIANCE", side="BUY", quantity=10, price=None):
+    return UnifiedOrder(
+        symbol=symbol, exchange="NSE", segment="CASH", transaction_type=side,
+        quantity=quantity, order_type="MARKET", product="MIS", price=price,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ltp_comes_from_the_price_source():
+    adapter = PaperAdapter({"slippage_pct": 0}, price_source=Prices(RELIANCE=2510.0))
+    assert await adapter.get_ltp(["RELIANCE", "TCS"]) == {"RELIANCE": 2510.0, "TCS": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_market_order_fills_at_the_market_price_not_the_order_price():
+    adapter = PaperAdapter({"slippage_pct": 0}, price_source=Prices(RELIANCE=2510.0))
+    result = await adapter.place_order(market_order(price=2400.0))
+    assert result.raw_response["fill_price"] == 2510.0
+
+
+@pytest.mark.asyncio
+async def test_without_a_source_the_order_price_is_still_used(adapter):
+    result = await adapter.place_order(market_order(price=2500.0))
+    assert result.raw_response["fill_price"] == pytest.approx(2500.0 * 1.0005)
+
+
+@pytest.mark.asyncio
+async def test_open_position_pnl_follows_the_market():
+    prices = Prices(RELIANCE=100.0)
+    adapter = PaperAdapter({"slippage_pct": 0}, price_source=prices)
+    await adapter.place_order(market_order(quantity=10))
+    prices.prices["RELIANCE"] = 95.0
+    (position,) = await adapter.get_positions()
+    assert position.last_price == 95.0 and position.pnl == pytest.approx(-50.0)
+
+
+@pytest.mark.asyncio
+async def test_short_position_pnl_follows_the_market():
+    prices = Prices(RELIANCE=100.0)
+    adapter = PaperAdapter({"slippage_pct": 0}, price_source=prices)
+    await adapter.place_order(market_order(side="SELL", quantity=10))
+    prices.prices["RELIANCE"] = 95.0
+    (position,) = await adapter.get_positions()
+    assert position.quantity == -10 and position.pnl == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+async def test_price_source_failure_falls_back_to_last_known_prices():
+    prices = Prices(RELIANCE=100.0)
+    adapter = PaperAdapter({"slippage_pct": 0}, price_source=prices)
+    await adapter.place_order(market_order(quantity=10))
+    prices.fail = True
+    assert await adapter.get_ltp(["RELIANCE"]) == {"RELIANCE": 100.0}
+    assert len(await adapter.get_positions()) == 1
+
+
+@pytest.mark.asyncio
+async def test_returned_positions_are_snapshots_not_live_objects():
+    adapter = PaperAdapter({"slippage_pct": 0}, price_source=Prices(RELIANCE=100.0))
+    await adapter.place_order(market_order(quantity=10))
+    (before,) = await adapter.get_positions()
+    await adapter.place_order(market_order(side="SELL", quantity=10))
+    assert (before.quantity, before.average_price) == (10, 100.0)

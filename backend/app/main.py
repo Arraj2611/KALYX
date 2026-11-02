@@ -37,6 +37,7 @@ from app.decisions.router import router as decisions_router
 from app.utils.scheduler import setup_scheduler, start_scheduler, shutdown_scheduler
 from app.brokers.account_manager import AccountManager
 from app.brokers.paper.adapter import PaperAdapter
+from app.brokers.paper.prices import YahooPriceSource
 
 # Setup logging
 setup_logging()
@@ -91,7 +92,13 @@ async def lifespan(app: FastAPI):
                 config = yaml.safe_load(f)
             for name, acct in config.get("accounts", {}).items():
                 if acct.get("broker") == "paper":
-                    adapter = PaperAdapter(config=acct.get("config", {}))
+                    paper_cfg = acct.get("config", {})
+                    price_source = (
+                        YahooPriceSource(paper_cfg["price_symbols"])
+                        if paper_cfg.get("price_symbols")
+                        else None
+                    )
+                    adapter = PaperAdapter(config=paper_cfg, price_source=price_source)
                     account_manager.register(name, adapter, acct)
             logger.info(f"Loaded accounts config from {config_path}")
         except Exception as e:

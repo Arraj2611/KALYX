@@ -22,6 +22,10 @@ accounts:
     config:
       initial_capital: 1000000
       slippage_pct: 0.05
+      # Without prices a paper pod skips every symbol. Yahoo quotes can lag the exchange.
+      price_symbols:
+        NIFTY: "^NSEI"
+        RELIANCE: "RELIANCE.NS"
     agents:
       enabled: true
       eval_interval_seconds: 60
