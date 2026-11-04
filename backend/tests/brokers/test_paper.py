@@ -287,12 +287,13 @@ async def test_short_position_pnl_follows_the_market():
 
 
 @pytest.mark.asyncio
-async def test_price_source_failure_falls_back_to_last_known_prices():
+async def test_price_source_failure_gives_no_price_not_a_stale_one():
     prices = Prices(RELIANCE=100.0)
     adapter = PaperAdapter({"slippage_pct": 0}, price_source=prices)
     await adapter.place_order(market_order(quantity=10))
     prices.fail = True
-    assert await adapter.get_ltp(["RELIANCE"]) == {"RELIANCE": 100.0}
+    # 0.0 means "no price"; returning the old fill would hide a dead feed from every stop check
+    assert await adapter.get_ltp(["RELIANCE"]) == {"RELIANCE": 0.0}
     assert len(await adapter.get_positions()) == 1
 
 

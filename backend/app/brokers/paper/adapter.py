@@ -238,11 +238,10 @@ class PaperAdapter(BrokerAdapter):
     async def get_ltp(self, symbols: list[str]) -> dict[str, float]:
         # Live price when a source is configured, else the last price seen for the position, else 0
         live = await self._market_prices(symbols)
-        return {
-            sym: live.get(sym)
-            or (self._positions[sym].last_price if sym in self._positions else 0.0)
-            for sym in symbols
-        }
+        if self._price_source is not None:
+            # 0.0 means no price. Falling back to the last fill would hide a dead feed from every stop check.
+            return {sym: live.get(sym, 0.0) for sym in symbols}
+        return {sym: self._positions[sym].last_price if sym in self._positions else 0.0 for sym in symbols}
 
     async def get_quote(
         self, symbol: str, exchange: str, segment: str

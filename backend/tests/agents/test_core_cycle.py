@@ -6,8 +6,10 @@ memory loop, runs for real. Earlier tests replaced the LLM router with an AsyncM
 TypeError in BaseAgent.think and an await on a sync guardian, and one test asserted nothing.
 """
 
+import asyncio
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -111,6 +113,7 @@ def make_pod(tmp_path, ollama, adapter, session, alerts, guardian=None, llm=None
                 **(guardian or {}),
             },
             "llm": {"quick_model": "m", "deep_model": "m", "ollama_base_url": ollama.url, "max_retries": 1, **(llm or {})},
+            "monitor_interval_seconds": 0.05,
             "prompts_dir": str(tmp_path / "prompts"),
             "memory": {"recall_limit": 10},
         },
@@ -400,3 +403,97 @@ async def test_flatten_closes_every_open_position(world):
 @pytest.mark.asyncio
 async def test_flatten_with_nothing_open_closes_nothing(world):
     assert await world.pod.flatten("drill") == 0
+
+
+async def wait_for(condition, timeout=3.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if await condition():
+            return True
+        await asyncio.sleep(0.02)
+    return False
+
+
+@pytest.mark.asyncio
+async def test_monitor_closes_a_stopped_position_without_waiting_for_the_cycle(world):
+    await world.pod.run_cycle()
+    await world.pod.start()
+    world.pod.start_monitor()
+    world.market.prices["NIFTY"] = 89.0
+
+    async def flat():
+        return await positions(world) == []
+
+    closed = await wait_for(flat)
+    await world.pod.stop()
+
+    assert closed
+    assert len(world.rows(action="executed", signal="EXIT")) == 1
+    assert world.ollama.count("analyst") == 1  # only the first cycle ever asked the model
+
+
+@pytest.mark.asyncio
+async def test_monitor_and_cycle_never_double_close(world):
+    await world.pod.run_cycle()
+    world.ollama.responses["analyst"] = signal("HOLD", confidence=0.5, stoploss=None, target=None)
+    world.market.prices["NIFTY"] = 89.0
+
+    await asyncio.gather(world.pod._monitor_tick(), world.pod.run_cycle(), world.pod._monitor_tick())
+
+    assert await positions(world) == []  # a double close would leave a short behind
+    assert len(world.rows(action="executed", signal="EXIT")) == 1
+
+
+@pytest.mark.asyncio
+async def test_monitor_survives_a_broker_error(world, monkeypatch):
+    await world.pod.run_cycle()
+    real = world.adapter.get_positions
+    calls = {"n": 0}
+
+    async def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("broker hiccup")
+        return await real()
+
+    monkeypatch.setattr(world.adapter, "get_positions", flaky)
+    world.market.prices["NIFTY"] = 89.0
+    await world.pod.start()
+    world.pod.start_monitor()
+
+    async def flat():
+        return await real() == []  # read through the real method so only the monitor sees the failure
+
+    closed = await wait_for(flat)
+    await world.pod.stop()
+
+    assert closed and calls["n"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_missing_price_alerts_once_after_three_checks_then_again_after_recovery(world):
+    await world.pod.run_cycle()
+    world.market.prices.clear()
+
+    for _ in range(4):
+        await world.pod._monitor_tick()
+    assert world.alerts.send_warning.await_count == 1
+    assert "NIFTY" in world.alerts.send_warning.await_args.args[1]
+
+    world.market.prices["NIFTY"] = 100.0
+    await world.pod._monitor_tick()
+    world.market.prices.clear()
+    for _ in range(3):
+        await world.pod._monitor_tick()
+    assert world.alerts.send_warning.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_eval_loop_starts_the_monitor_and_stop_cancels_it(world):
+    await world.pod.start()
+    await world.pod.start_eval_loop()
+    assert world.pod._monitor_task is not None and not world.pod._monitor_task.done()
+
+    await world.pod.stop()
+
+    assert world.pod._monitor_task.done()

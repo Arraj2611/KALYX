@@ -83,6 +83,11 @@ class AgentPod:
         self._no_price: set[str] = set()
         self._last_cycle: dict | None = None
         self._kill_switch = KillSwitch(lambda: self._db)
+        # Serialises everything that places an order: the analysis cycle, the stop monitor and flatten.
+        self._trade_lock = asyncio.Lock()
+        self._monitor_task: asyncio.Task | None = None
+        self._price_miss: dict[str, int] = {}
+        self._price_alerted: set[str] = set()
 
         agent_cfg = config.get("agents", {})
         llm_cfg = agent_cfg.get("llm", {})
@@ -154,12 +159,13 @@ class AgentPod:
     async def stop(self) -> None:
         """Stop the eval loop, run the end-of-session review, and mark as stopped."""
         self._running = False
-        if self._eval_task:
-            self._eval_task.cancel()
-            try:
-                await self._eval_task
-            except asyncio.CancelledError:
-                pass
+        for task in (self._eval_task, self._monitor_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         try:
             summary = await self.memory.end_of_session_review()
             logger.info("[%s] Session review: %s", self.account_name, summary)
@@ -172,8 +178,46 @@ class AgentPod:
     # ------------------------------------------------------------------
 
     async def start_eval_loop(self) -> None:
-        """Spawn the background task that calls run_cycle on a fixed interval."""
+        """Spawn the analysis loop and the stop monitor."""
         self._eval_task = asyncio.create_task(self._eval_loop())
+        self.start_monitor()
+
+    def start_monitor(self) -> None:
+        """Start only the stop monitor: it checks stops and targets every few seconds, with no model."""
+        if self._monitor_task is None or self._monitor_task.done():
+            self._monitor_task = asyncio.create_task(self._monitor_loop())
+
+    async def _monitor_loop(self) -> None:
+        interval = float(self.config.get("agents", {}).get("monitor_interval_seconds", 5))
+        failures = 0
+        while self._running:
+            try:
+                await self._monitor_tick()
+                failures = 0
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - one bad tick must never end the loop
+                failures += 1
+                logger.error("[%s] Stop monitor tick failed (%d in a row): %s", self.account_name, failures, exc)
+                if failures == 3:
+                    await self._alert(f"Stop monitor has failed {failures} checks in a row: {exc}")
+            await asyncio.sleep(interval)
+
+    async def _monitor_tick(self) -> int:
+        """One stop/target check against fresh broker state. Returns how many positions it closed."""
+        agent_cfg = self.config.get("agents", {})
+        async with self._trade_lock:
+            positions, margins = await self._broker_state()
+            await self._recover_plans(positions)
+            return await self._enforce_exits(positions, margins, agent_cfg)
+
+    async def _alert(self, message: str) -> None:
+        logger.error("[%s] %s", self.account_name, message)
+        if self._alert_service:
+            try:
+                await self._alert_service.send_warning(self.account_name, message)
+            except Exception:  # noqa: BLE001
+                pass
 
     async def _eval_loop(self) -> None:
         """Internal loop: run_cycle, sleep interval, repeat while running."""
@@ -216,22 +260,23 @@ class AgentPod:
         if not watched:
             return result
 
-        try:
-            positions, margins = await self._broker_state()
-        except Exception as exc:  # noqa: BLE001
-            logger.error("[%s] Failed to get positions/margins: %s", self.account_name, exc)
-            result["errors"] += 1
-            await self._finish_cycle(result)
-            return result
+        async with self._trade_lock:
+            try:
+                positions, margins = await self._broker_state()
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[%s] Failed to get positions/margins: %s", self.account_name, exc)
+                result["errors"] += 1
+                await self._finish_cycle(result)
+                return result
 
-        try:
-            await self._recover_plans(positions)
-            result["closed"] += await self._enforce_exits(positions, margins, agent_cfg)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("[%s] Stop/target check failed: %s", self.account_name, exc, exc_info=True)
-            result["errors"] += 1
-        if result["closed"]:
-            positions, margins = await self._refreshed(positions, margins)
+            try:
+                await self._recover_plans(positions)
+                result["closed"] += await self._enforce_exits(positions, margins, agent_cfg)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[%s] Stop/target check failed: %s", self.account_name, exc, exc_info=True)
+                result["errors"] += 1
+            if result["closed"]:
+                positions, margins = await self._refreshed(positions, margins)
 
         for symbol in watched:
             result["evaluated"] += 1
@@ -271,12 +316,7 @@ class AgentPod:
                 f"Eval cycle failed: {result['errors']} error(s) across "
                 f"{result['evaluated']} symbol(s) evaluated"
             )
-            logger.error("[%s] %s", self.account_name, message)
-            if self._alert_service:
-                try:
-                    await self._alert_service.send_warning(self.account_name, message)
-                except Exception:  # noqa: BLE001
-                    pass
+            await self._alert(message)
 
     # ------------------------------------------------------------------
     # Open positions: stop-loss, target, and learning from closed trades
@@ -341,12 +381,19 @@ class AgentPod:
         prices = await self.adapter.get_ltp([p.symbol for p in managed])
         closed = 0
         for position in managed:
-            ltp = float(prices.get(position.symbol) or 0.0)
+            symbol = position.symbol
+            ltp = float(prices.get(symbol) or 0.0)
             if ltp <= 0:
-                logger.warning(
-                    "[%s] No price for %s: cannot check its stop", self.account_name, position.symbol
-                )
+                misses = self._price_miss[symbol] = self._price_miss.get(symbol, 0) + 1
+                logger.warning("[%s] No price for %s: cannot check its stop", self.account_name, symbol)
+                if misses >= 3 and symbol not in self._price_alerted:
+                    self._price_alerted.add(symbol)
+                    await self._alert(
+                        f"No price for open position {symbol} on {misses} checks in a row: its stop cannot be checked"
+                    )
                 continue
+            self._price_miss.pop(symbol, None)
+            self._price_alerted.discard(symbol)
             reason = self._exit_reason(position, self._plans[position.symbol], ltp)
             if reason and await self._close_position(position, positions, margins, agent_cfg, ltp, reason):
                 closed += 1
@@ -397,15 +444,16 @@ class AgentPod:
         Used by the kill-switch endpoint. Exits are never blocked by the switch or by risk limits.
         """
         agent_cfg = self.config.get("agents", {})
-        positions, margins = await self._broker_state()
-        open_positions = [p for p in positions if p.quantity != 0]
-        prices = await self.adapter.get_ltp([p.symbol for p in open_positions]) if open_positions else {}
-        closed = 0
-        for position in open_positions:
-            ltp = float(prices.get(position.symbol) or 0.0)
-            if await self._close_position(position, positions, margins, agent_cfg, ltp, f"flatten ({reason})"):
-                closed += 1
-        return closed
+        async with self._trade_lock:
+            positions, margins = await self._broker_state()
+            open_positions = [p for p in positions if p.quantity != 0]
+            prices = await self.adapter.get_ltp([p.symbol for p in open_positions]) if open_positions else {}
+            closed = 0
+            for position in open_positions:
+                ltp = float(prices.get(position.symbol) or 0.0)
+                if await self._close_position(position, positions, margins, agent_cfg, ltp, f"flatten ({reason})"):
+                    closed += 1
+            return closed
 
     async def _record_close(self, symbol: str, position: Any, output: Any) -> None:
         """Feed a closed trade to the memory agent: hindsight on the entry, then a reflection."""
@@ -583,35 +631,40 @@ class AgentPod:
             # Propagate judge's adjusted confidence
             context.signals["confidence"] = judge_output.confidence
 
-        # ---- 3. Guardian (pure arithmetic, so a plain call) --------------
-        guardian_output = self.guardian.run(context)
-        context.guardian_verdict = guardian_output.data
+        # ---- 3 and 4. Guardian, then executor: under the trade lock, on a fresh broker view ----
+        # The model took seconds; the stop monitor may have closed or opened something meanwhile.
+        async with self._trade_lock:
+            positions, margins = await self._refreshed(positions, margins)
+            context.positions, context.margins = positions, margins
+            context.recent_decisions = self._todays_decisions(positions)
 
-        if guardian_output.action == "BLOCK":
-            await self._decision_logger.log_decision(
-                account_name=self.account_name,
-                symbol=symbol,
-                signal=signal,
-                action=DecisionAction.BLOCKED,
-                confidence=analyst_output.confidence,
-                reasoning=guardian_output.reasoning,
-                market_state=market_state,
-                skip_reason=guardian_output.data.get("reason", "guardian"),
-            )
-            return "none"
+            guardian_output = self.guardian.run(context)
+            context.guardian_verdict = guardian_output.data
 
-        # ---- 4. Execute --------------------------------------------------
-        executor_output = await self.executor.run(context)
+            if guardian_output.action == "BLOCK":
+                await self._decision_logger.log_decision(
+                    account_name=self.account_name,
+                    symbol=symbol,
+                    signal=signal,
+                    action=DecisionAction.BLOCKED,
+                    confidence=analyst_output.confidence,
+                    reasoning=guardian_output.reasoning,
+                    market_state=market_state,
+                    skip_reason=guardian_output.data.get("reason", "guardian"),
+                )
+                return "none"
 
-        outcome = "none"
-        if executor_output.action == "EXECUTE":
-            if signal == "EXIT":
-                held = next((p for p in positions if p.symbol == symbol and p.quantity != 0), None)
-                await self._record_close(symbol, held, executor_output)
-                outcome = "closed"
-            else:
-                self._open_plan(symbol, signal, context.signals, executor_output)
-                outcome = "entered"
+            executor_output = await self.executor.run(context)
+
+            outcome = "none"
+            if executor_output.action == "EXECUTE":
+                if signal == "EXIT":
+                    held = next((p for p in positions if p.symbol == symbol and p.quantity != 0), None)
+                    await self._record_close(symbol, held, executor_output)
+                    outcome = "closed"
+                else:
+                    self._open_plan(symbol, signal, context.signals, executor_output)
+                    outcome = "entered"
 
         if self._stream_publisher:
             await self._stream_publisher.publish_decision(
