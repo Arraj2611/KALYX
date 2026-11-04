@@ -10,7 +10,7 @@ import asyncio
 import json
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -559,3 +559,57 @@ async def test_monitor_waits_while_the_market_is_closed(world):
 
     clock["now"] = IN_SESSION
     assert await pod._monitor_tick() == 1 and await positions(world) == []
+
+
+async def stop_out(world, pod=None):
+    pod = pod or world.pod
+    await pod.run_cycle()
+    world.ollama.responses["analyst"] = signal("HOLD", confidence=0.5, stoploss=None, target=None)
+    world.market.prices["NIFTY"] = 89.0
+    await pod.run_cycle()
+    world.ollama.responses["analyst"] = signal("BUY")
+    world.market.prices["NIFTY"] = 100.0
+
+
+@pytest.mark.asyncio
+async def test_exits_record_their_reason(world):
+    await stop_out(world)
+    assert world.rows(action="executed", signal="EXIT")[0].market_state["exit_reason"] == "stop_loss"
+
+    pod = world.build(symbols=("NIFTY", "RELIANCE"))
+    world.market.prices["RELIANCE"] = 200.0
+    await pod.run_cycle()
+    await pod.flatten("drill")
+    reasons = [r.market_state["exit_reason"] for r in world.rows(action="executed", signal="EXIT")]
+    assert reasons.count("flatten") >= 1
+
+
+@pytest.mark.asyncio
+async def test_a_stop_out_blocks_re_entry_for_the_cooldown(world):
+    await stop_out(world)
+
+    await world.pod.run_cycle()
+
+    assert await positions(world) == []
+    assert world.rows(action="blocked")[-1].skip_reason == "cooldown"
+
+
+@pytest.mark.asyncio
+async def test_cooldown_survives_a_restart(world):
+    await stop_out(world)
+    restarted = world.build()
+
+    await restarted.run_cycle()
+
+    assert await positions(world) == []
+    assert world.rows(action="blocked")[-1].skip_reason == "cooldown"
+
+
+@pytest.mark.asyncio
+async def test_cooldown_ends_after_the_window(world):
+    await stop_out(world)
+    later = world.build(clock=lambda: datetime.now(timezone.utc) + timedelta(minutes=31))
+
+    await later.run_cycle()
+
+    assert len(await positions(world)) == 1

@@ -442,6 +442,7 @@ class AgentPod:
             signals={
                 "signal": "EXIT",
                 "confidence": 1.0,
+                "exit_reason": reason.split(" (")[0],
                 "reasoning": f"{reason}: price {ltp}, plan {self._plans.get(position.symbol)}",
             },
             debate_result=None,
@@ -499,6 +500,13 @@ class AgentPod:
             "target": self._valid_target(signal, signals.get("target"), fill),
         }
 
+    @staticmethod
+    def _utc_iso(stamp: Any) -> str | None:
+        """ISO UTC text for a stored timestamp (SQLite hands back naive UTC)."""
+        if stamp is None:
+            return None
+        return (stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat()
+
     def _todays_decisions(self, positions: list) -> list[dict]:
         """Today's executed decisions plus open-position P&L, in the shape the guardian sums.
 
@@ -522,6 +530,8 @@ class AgentPod:
                 "signal": row.signal,
                 "symbol": row.symbol,
                 "pnl": float((row.market_state or {}).get("realised_pnl", 0.0)) if row.signal == "EXIT" else 0.0,
+                "exit_reason": (row.market_state or {}).get("exit_reason") if row.signal == "EXIT" else None,
+                "timestamp": self._utc_iso(row.timestamp),
             }
             for row in rows
         ]
@@ -594,6 +604,7 @@ class AgentPod:
             guardian_verdict=None,
             config=agent_cfg,
             halted=halted,
+            now=self._clock(),
         )
 
         # ---- 1. Analyst --------------------------------------------------
@@ -656,6 +667,7 @@ class AgentPod:
             positions, margins = await self._refreshed(positions, margins)
             context.positions, context.margins = positions, margins
             context.recent_decisions = self._todays_decisions(positions)
+            context.now = self._clock()
 
             guardian_output = self.guardian.run(context)
             context.guardian_verdict = guardian_output.data

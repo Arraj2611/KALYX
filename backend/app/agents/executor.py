@@ -168,7 +168,11 @@ class ExecutorAgent(BaseAgent):
         logged_state = market_state
         if held is not None:
             data["realised_pnl"] = (fill_price - held_average) * held_quantity
-            logged_state = {**market_state, "realised_pnl": data["realised_pnl"]}
+            logged_state = {
+                **market_state,
+                "realised_pnl": data["realised_pnl"],
+                "exit_reason": signals.get("exit_reason", "signal"),
+            }
 
         data["decision_id"] = await self._decision_logger.log_decision(
             account_name=self.account_name,

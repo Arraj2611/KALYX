@@ -304,3 +304,57 @@ def test_guardian_blocks_entry_when_halted_with_reason_kill_switch():
 def test_guardian_allows_exit_when_halted():
     context = entry_context(halted=True, signals={"signal": "EXIT", "confidence": 0.5})
     assert guarded().run(context).action == "ALLOW"
+
+
+# ---------------------------------------------------------------------------
+# Cooldown after a stop-loss exit
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta, timezone
+
+NOW = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)
+
+
+def stopped_out(symbol="NIFTY", minutes_ago=10, reason="stop_loss"):
+    return {
+        "action": "executed", "signal": "EXIT", "symbol": symbol, "pnl": -33.0,
+        "exit_reason": reason, "timestamp": (NOW - timedelta(minutes=minutes_ago)).isoformat(),
+    }
+
+
+def test_cooldown_blocks_reentry_within_the_window():
+    context = entry_context(recent_decisions=[stopped_out(minutes_ago=10)], now=NOW)
+    assert guarded().run(context).data["reason"] == "cooldown"
+
+
+def test_cooldown_expires():
+    context = entry_context(recent_decisions=[stopped_out(minutes_ago=31)], now=NOW)
+    assert guarded().run(context).action == "ALLOW"
+
+
+def test_cooldown_is_per_symbol():
+    context = entry_context(recent_decisions=[stopped_out(symbol="RELIANCE")], now=NOW)
+    assert guarded().run(context).action == "ALLOW"
+
+
+def test_a_target_exit_does_not_cool_down():
+    context = entry_context(recent_decisions=[stopped_out(reason="target")], now=NOW)
+    assert guarded().run(context).action == "ALLOW"
+
+
+def test_cooldown_never_blocks_an_exit():
+    context = entry_context(
+        recent_decisions=[stopped_out()], now=NOW, signals={"signal": "EXIT", "confidence": 0.5}
+    )
+    assert guarded().run(context).action == "ALLOW"
+
+
+def test_cooldown_length_is_configurable_and_zero_disables_it():
+    context = entry_context(recent_decisions=[stopped_out(minutes_ago=10)], now=NOW)
+    assert guarded(cooldown_minutes=5).run(context).action == "ALLOW"
+    assert guarded(cooldown_minutes=0).run(context).action == "ALLOW"
+
+
+def test_an_unreadable_timestamp_does_not_crash_or_block():
+    row = {**stopped_out(), "timestamp": "not a time"}
+    assert guarded().run(entry_context(recent_decisions=[row], now=NOW)).action == "ALLOW"

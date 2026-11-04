@@ -17,9 +17,19 @@ from __future__ import annotations
 
 import math
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.agents.base import AgentContext, AgentOutput, BaseAgent
+
+
+def _parse_time(value: Any) -> datetime | None:
+    """ISO timestamp as an aware UTC datetime, or None for anything unreadable."""
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def as_price(value: Any) -> float | None:
@@ -58,6 +68,7 @@ class GuardianAgent(BaseAgent):
         self.max_capital_pct: float = float(config.get("max_capital_pct", 80))
         self.max_trades_day: int = int(config.get("max_trades_day", 50))
         self.min_confidence: float = float(config.get("min_confidence", 0.6))
+        self.cooldown_minutes: float = float(config.get("cooldown_minutes", 30))
         self.max_position_concentration_pct: float = float(
             config.get("max_position_concentration_pct", 30)
         )
@@ -159,6 +170,21 @@ class GuardianAgent(BaseAgent):
                     reason="max_trades_reached",
                     reasoning=f"{trades_today} trades today; limit is {self.max_trades_day}.",
                 )
+
+            # 4b. Cooldown: no re-entry right after a stop-loss on the same symbol
+            if self.cooldown_minutes > 0:
+                now = context.now or datetime.now(timezone.utc)
+                window = timedelta(minutes=self.cooldown_minutes)
+                for d in context.recent_decisions:
+                    if d.get("symbol") != context.symbol or d.get("exit_reason") != "stop_loss":
+                        continue
+                    stopped_at = _parse_time(d.get("timestamp"))
+                    if stopped_at is not None and now - stopped_at < window:
+                        return self._block(
+                            start,
+                            reason="cooldown",
+                            reasoning=f"{context.symbol} was stopped out {(now - stopped_at).seconds // 60} min ago; cooldown is {self.cooldown_minutes:g} min.",
+                        )
 
             # 5. One position per symbol: pyramiding or flipping must go through an EXIT first
             if any(p.symbol == context.symbol and p.quantity != 0 for p in context.positions):

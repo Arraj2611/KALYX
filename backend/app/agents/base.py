@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import abc
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -43,6 +44,7 @@ class AgentContext:
     guardian_verdict: dict | None
     config: dict
     halted: bool = False  # kill switch on: no new positions
+    now: datetime | None = None  # the pod's clock; None means the real time
 
 
 # ---------------------------------------------------------------------------

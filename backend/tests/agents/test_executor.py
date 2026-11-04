@@ -242,3 +242,24 @@ async def test_exit_pnl_uses_the_position_as_it_was_before_the_order(executor, c
     context.positions = [position]
 
     assert (await executor.run(context)).data["realised_pnl"] == pytest.approx(15.0)
+
+
+@pytest.mark.asyncio
+async def test_exit_records_why_it_happened(executor, context, mock_adapter, mock_decision_logger):
+    context.signals.update({"signal": "EXIT", "exit_reason": "stop_loss"})
+    context.positions = [held(3)]
+    mock_adapter.place_order.return_value = OrderResult("PAPER-002", "COMPLETE", "paper", {"fill_price": 95.0})
+
+    await executor.run(context)
+
+    assert logged(mock_decision_logger)["market_state"]["exit_reason"] == "stop_loss"
+
+
+@pytest.mark.asyncio
+async def test_exit_without_a_stated_reason_is_a_signal_exit(executor, context, mock_adapter, mock_decision_logger):
+    context.signals["signal"] = "EXIT"
+    context.positions = [held(3)]
+
+    await executor.run(context)
+
+    assert logged(mock_decision_logger)["market_state"]["exit_reason"] == "signal"
