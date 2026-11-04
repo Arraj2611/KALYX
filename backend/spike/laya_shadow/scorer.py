@@ -18,19 +18,29 @@ _URGENCY = ["old or routine", "minor", "important today", "breaking, act now"]
 
 
 def build_questions(symbol: str) -> dict:
+    if symbol.startswith("MKT_"):  # market-wide topics are asked about the index, not a share price
+        event, moves, positive = (
+            "What kind of event does `message` describe for the Indian stock market?",
+            "Is `message` likely to move the level of the NIFTY 50 index?",
+            "Is `message` positive news for Indian equity markets?",
+        )
+    else:
+        event = f"What kind of event does `message` describe for {symbol}?"
+        moves = f"Is `message` likely to move the share price of {symbol}?"
+        positive = f"Is `message` positive news for {symbol} shareholders?"
     return {
         "event_type": {
             "type": "choice",
-            "instructions": f"What kind of event does `message` describe for {symbol}?",
+            "instructions": event,
             "criteria": dict(_EVENT_TYPES),
         },
         "material_to_symbol": {
             "type": "noul",
-            "instructions": f"Is `message` likely to move the share price of {symbol}?",
+            "instructions": moves,
         },
         "bullish_for_symbol": {
             "type": "noul",
-            "instructions": f"Is `message` positive news for {symbol} shareholders?",
+            "instructions": positive,
         },
         "urgency": {
             "type": "score",

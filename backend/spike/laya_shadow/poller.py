@@ -26,6 +26,7 @@ from laya_shadow.symbols import SymbolMatcher
 
 logger = logging.getLogger("laya_shadow.poller")
 _SYMBOLS_PATH = Path(__file__).resolve().parents[1] / "nifty50_symbols.yaml"
+_MARKET_PATH = Path(__file__).resolve().parents[1] / "market_queries.yaml"
 PUBLISHER_FEEDS = {
     "economic_times": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
     "livemint": "https://www.livemint.com/rss/markets",
@@ -143,6 +144,11 @@ class NseFilings:
     def symbols(self, item: dict, matcher: SymbolMatcher) -> list[str]:
         symbol = matcher.company(item.get("company") or "")
         return [symbol] if symbol else []
+
+
+def load_market_queries(path: Path = _MARKET_PATH) -> list[dict]:
+    """Market-wide entries (RBI, Fed, crude, rupee, budget, the index itself) for index-level labels."""
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def load_symbols(path: Path = _SYMBOLS_PATH) -> list[dict]:
@@ -303,7 +309,7 @@ def main() -> None:
     from laya_shadow.models import make_session_factory
     from laya_shadow.scorer import LayaScorer
 
-    symbols = load_symbols()[: args.limit or None]
+    symbols = load_symbols()[: args.limit or None] + load_market_queries()
     matcher = SymbolMatcher(symbols)
     feeds: list[Any] = [PublisherFeed(name, url) for name, url in PUBLISHER_FEEDS.items()] + [NseFilings()]
     sources: list[Any] = [GoogleNewsRss()]

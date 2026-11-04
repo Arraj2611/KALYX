@@ -81,6 +81,11 @@ def fill_pending(session_factory: Callable[[], Session], fetcher: PriceFetcher, 
             ticker = entry["ticker"]
             fine, fine_idx = series(ticker, "15m"), series(INDEX_TICKER, "15m")
             hourly, hourly_idx = series(ticker, "1h"), series(INDEX_TICKER, "1h")
+            if ticker == INDEX_TICKER:
+                # An index entry is labeled with the raw index return: subtracting the index from itself
+                # would give zero for every row. A flat series makes the adjustment a no-op.
+                fine_idx = pd.Series(1.0, index=fine.index)
+                hourly_idx = pd.Series(1.0, index=hourly.index)
             horizon_end = t0 + timedelta(hours=1)
             if min(len(fine), len(fine_idx), len(hourly), len(hourly_idx)) == 0 or fine.index[-1] < horizon_end:
                 counts["no_data"] += 1
@@ -111,9 +116,9 @@ def fill_pending(session_factory: Callable[[], Session], fetcher: PriceFetcher, 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     from laya_shadow.models import make_session_factory
-    from laya_shadow.poller import load_symbols
+    from laya_shadow.poller import load_market_queries, load_symbols
 
-    symbols = {e["symbol"]: e for e in load_symbols()}
+    symbols = {e["symbol"]: e for e in load_symbols() + load_market_queries()}
     print(json.dumps(fill_pending(make_session_factory(), YahooPriceFetcher(), symbols, datetime.now(timezone.utc))))
 
 
