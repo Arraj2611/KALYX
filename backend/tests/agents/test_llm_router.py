@@ -190,3 +190,66 @@ async def test_generate_retry_on_failure():
 
     assert result == "Test LLM output"
     assert call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# One HTTP client per event loop (building a client cost about a second a call on Windows)
+# ---------------------------------------------------------------------------
+
+
+def counting_client():
+    """Patch httpx.AsyncClient with a fake that counts how often it is built."""
+    import asyncio
+
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=make_mock_response())
+    client.aclose = AsyncMock()
+    patcher = patch("httpx.AsyncClient", return_value=client)
+    return patcher, client
+
+
+@pytest.mark.asyncio
+async def test_two_calls_share_one_client():
+    router = LLMRouter(DEFAULT_CONFIG)
+    patcher, client = counting_client()
+    with patcher as constructor:
+        await router.generate("one")
+        await router.generate("two")
+    assert constructor.call_count == 1 and client.post.await_count == 2
+
+
+def test_a_new_event_loop_gets_a_new_client():
+    import asyncio
+
+    router = LLMRouter(DEFAULT_CONFIG)
+    patcher, _ = counting_client()
+    with patcher as constructor:
+        asyncio.run(router.generate("first loop"))
+        asyncio.run(router.generate("second loop"))
+    assert constructor.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_aclose_closes_the_client_and_a_later_call_builds_a_new_one():
+    router = LLMRouter(DEFAULT_CONFIG)
+    patcher, client = counting_client()
+    with patcher as constructor:
+        await router.generate("one")
+        await router.aclose()
+        await router.generate("two")
+    client.aclose.assert_awaited_once()
+    assert constructor.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_aclose_before_any_call_does_nothing():
+    await LLMRouter(DEFAULT_CONFIG).aclose()
+
+
+@pytest.mark.asyncio
+async def test_the_client_carries_the_configured_timeout():
+    router = LLMRouter(DEFAULT_CONFIG)
+    patcher, _ = counting_client()
+    with patcher as constructor:
+        await router.generate("one")
+    assert constructor.call_args.kwargs["timeout"] == 30.0

@@ -172,6 +172,10 @@ class AgentPod:
                 except asyncio.CancelledError:
                     pass
         try:
+            await self.llm_router.aclose()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[%s] Could not close the LLM client: %s", self.account_name, exc)
+        try:
             summary = await self.memory.end_of_session_review()
             logger.info("[%s] Session review: %s", self.account_name, summary)
         except Exception as exc:  # noqa: BLE001

@@ -39,6 +39,10 @@ class LLMRouter:
         self._named_models: dict[str, str] = {}
         self._timeout: float = float(config.get("timeout_seconds", 120))
         self._max_retries: int = int(config.get("max_retries", 3))
+        # One client per running event loop, built on first use. Building a client for every call
+        # (loading TLS settings) cost about a second a call; a client cannot cross event loops.
+        self._http: httpx.AsyncClient | None = None
+        self._http_loop: asyncio.AbstractEventLoop | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,6 +108,20 @@ class LLMRouter:
     # Internal
     # ------------------------------------------------------------------
 
+    def _client(self) -> httpx.AsyncClient:
+        loop = asyncio.get_running_loop()
+        if self._http is None or self._http_loop is not loop or getattr(self._http, "is_closed", False) is True:
+            self._http = httpx.AsyncClient(timeout=self._timeout)
+            self._http_loop = loop
+        return self._http
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP client. A later call builds a new one."""
+        client, loop = self._http, self._http_loop
+        self._http, self._http_loop = None, None
+        if client is not None and loop is asyncio.get_running_loop():
+            await client.aclose()
+
     async def _call_ollama(
         self,
         model: str,
@@ -135,11 +153,9 @@ class LLMRouter:
         last_exc: Exception | None = None
         for attempt in range(self._max_retries):
             try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    response = await client.post(url, json=payload)
-                    response.raise_for_status()
-                    data = response.json()
-                    return data["response"]
+                response = await self._client().post(url, json=payload)
+                response.raise_for_status()
+                return response.json()["response"]
             except Exception as exc:
                 last_exc = exc
                 if attempt < self._max_retries - 1:
