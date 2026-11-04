@@ -8,6 +8,21 @@ from unittest.mock import AsyncMock, MagicMock
 from app.brokers.paper.adapter import PaperAdapter
 from app.agents.pod import AgentPod
 
+import app.control.models  # noqa: F401
+import app.data.models  # noqa: F401
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.data.database import Base
+
+
+def real_session():
+    """A real in-memory database: the pod now reads the kill switch and decision history from it."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +114,7 @@ def pod(pod_config, mock_llm_response, tmp_path):
         account_name="paper_test",
         adapter=adapter,
         config=pod_config,
-        db=MagicMock(),
+        db=real_session(),
         alert_service=MagicMock(),
     )
 

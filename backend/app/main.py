@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 import yaml as _yaml
 from app.config import settings
+from app.control.router import router as control_router
 from app.security import check_ws_token, require_api_key
 from app.utils.logging import setup_logging
 from app.data.database import init_db, close_db, SessionLocal
@@ -263,6 +264,7 @@ app.include_router(risk_router, prefix="/api/risk", tags=["Risk Management"], de
 app.include_router(data_router, prefix="/api/data", tags=["Data"], dependencies=[Depends(require_api_key)])
 app.include_router(agents_router, prefix="/api/agents", tags=["AI Agents"], dependencies=[Depends(require_api_key)])
 app.include_router(decisions_router, prefix="/api/decisions", tags=["Decisions"], dependencies=[Depends(require_api_key)])
+app.include_router(control_router, prefix="/api/control", tags=["Control"], dependencies=[Depends(require_api_key)])
 
 
 if __name__ == "__main__":

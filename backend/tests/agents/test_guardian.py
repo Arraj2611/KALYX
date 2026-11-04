@@ -293,3 +293,14 @@ def test_concentration_blocks_a_position_that_is_too_large():
     # 3 lots at 100 against 300,000 total capital is 0.1%
     assert guarded(max_position_concentration_pct=0.05).run(entry_context()).data["reason"] == "concentration_exceeded"
     assert guarded(max_position_concentration_pct=0.5).run(entry_context()).action == "ALLOW"
+
+
+def test_guardian_blocks_entry_when_halted_with_reason_kill_switch():
+    context = entry_context(halted=True)
+    result = guarded().run(context)
+    assert result.action == "BLOCK" and result.data["reason"] == "kill_switch"
+
+
+def test_guardian_allows_exit_when_halted():
+    context = entry_context(halted=True, signals={"signal": "EXIT", "confidence": 0.5})
+    assert guarded().run(context).action == "ALLOW"

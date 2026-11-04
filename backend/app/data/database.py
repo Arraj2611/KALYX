@@ -35,6 +35,7 @@ async def init_db():
     try:
         # Import all models to ensure they're registered
         from app.data import models  # noqa
+        from app.control import models as control_models  # noqa
         
         # Create tables
         Base.metadata.create_all(bind=engine)

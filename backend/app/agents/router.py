@@ -18,6 +18,10 @@ def set_pods(pods: Dict[str, "AgentPod"]):
     _pods = pods
 
 
+def get_pods() -> Dict[str, "AgentPod"]:
+    return _pods
+
+
 router = APIRouter()
 
 

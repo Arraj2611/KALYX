@@ -20,6 +20,7 @@ from sqlalchemy.pool import StaticPool
 import app.data.models  # noqa: F401  (registers the tables DecisionLog points at)
 from app.agents.pod import AgentPod
 from app.brokers.paper.adapter import PaperAdapter
+from app.control.killswitch import KillSwitch
 from app.data.database import Base
 from app.decisions.models import DecisionLog
 
@@ -349,3 +350,53 @@ async def test_target_on_the_wrong_side_of_the_entry_is_ignored(world):
 
     (position,) = await positions(world)
     assert position.quantity == 3
+
+
+@pytest.mark.asyncio
+async def test_halted_symbol_with_no_position_makes_no_model_call(world):
+    KillSwitch(lambda: world.session).halt("all", "test", "pytest")
+
+    result = await world.pod.run_cycle()
+
+    assert world.ollama.count("analyst") == 0 and await positions(world) == []
+    assert result["skipped_halted"] == 1 and result["errors"] == 0
+
+
+@pytest.mark.asyncio
+async def test_halt_blocks_new_entries_with_a_position_open(world):
+    await world.pod.run_cycle()
+    KillSwitch(lambda: world.session).halt("paper_test", "test", "pytest")
+
+    await world.pod.run_cycle()
+
+    assert world.rows(action="blocked")[-1].skip_reason == "kill_switch"
+
+
+@pytest.mark.asyncio
+async def test_halt_does_not_stop_the_stop_loss(world):
+    await world.pod.run_cycle()
+    KillSwitch(lambda: world.session).halt("all", "test", "pytest")
+    world.ollama.responses["analyst"] = signal("HOLD", confidence=0.5, stoploss=None, target=None)
+    world.market.prices["NIFTY"] = 89.0
+
+    result = await world.pod.run_cycle()
+
+    assert result["closed"] == 1 and await positions(world) == []
+
+
+@pytest.mark.asyncio
+async def test_flatten_closes_every_open_position(world):
+    pod = world.build(symbols=("NIFTY", "RELIANCE"))
+    world.market.prices["RELIANCE"] = 200.0  # the canned BUY has stop 90, so the price must sit above it
+    await pod.run_cycle()
+    assert len(await positions(world)) == 2
+
+    closed = await pod.flatten("owner pressed the button")
+
+    assert closed == 2 and await positions(world) == []
+    assert len(world.rows(action="executed", signal="EXIT")) == 2
+
+
+@pytest.mark.asyncio
+async def test_flatten_with_nothing_open_closes_nothing(world):
+    assert await world.pod.flatten("drill") == 0

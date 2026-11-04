@@ -42,6 +42,7 @@ class AgentContext:
     debate_result: dict | None
     guardian_verdict: dict | None
     config: dict
+    halted: bool = False  # kill switch on: no new positions
 
 
 # ---------------------------------------------------------------------------

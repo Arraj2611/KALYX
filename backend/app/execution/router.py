@@ -7,6 +7,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.data.database import get_db_session
+from app.control.killswitch import KillSwitch
 from app.execution.service import ExecutionService
 from app.brokers.account_manager import AccountManager
 
@@ -61,6 +62,8 @@ async def place_order(
     db: Session = Depends(get_db_session)
 ):
     """Place a new order."""
+    if KillSwitch(lambda: db).is_halted(account_name):
+        raise HTTPException(status_code=423, detail="Kill switch is on for this account")
     adapter = _get_adapter(account_name)
     service = ExecutionService(db, adapter)
     try:

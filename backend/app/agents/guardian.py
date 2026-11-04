@@ -96,6 +96,11 @@ class GuardianAgent(BaseAgent):
                     start, reason="unknown_signal", reasoning=f"Cannot trade on signal '{signal}'."
                 )
 
+            if context.halted:
+                return self._block(
+                    start, reason="kill_switch", reasoning="Kill switch is on: no new positions."
+                )
+
             # 1. Daily loss check
             daily_pnl = sum(
                 d.get("pnl", 0.0) for d in context.recent_decisions

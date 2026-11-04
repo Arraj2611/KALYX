@@ -34,6 +34,7 @@ from app.agents.executor import ExecutorAgent
 from app.agents.memory import MemoryAgent
 from app.agents.strategist import StrategistAgent
 from app.agents.streams import AgentStreamPublisher
+from app.control.killswitch import KillSwitch
 from app.decisions.models import DecisionAction, DecisionLog
 from app.decisions.logger import DecisionLogger
 
@@ -81,6 +82,7 @@ class AgentPod:
         self._unmanaged: set[str] = set()
         self._no_price: set[str] = set()
         self._last_cycle: dict | None = None
+        self._kill_switch = KillSwitch(lambda: self._db)
 
         agent_cfg = config.get("agents", {})
         llm_cfg = agent_cfg.get("llm", {})
@@ -210,7 +212,7 @@ class AgentPod:
         """
         agent_cfg = self.config.get("agents", {})
         watched = agent_cfg.get("watched_symbols", [])
-        result = {"evaluated": 0, "errors": 0, "closed": 0}
+        result = {"evaluated": 0, "errors": 0, "closed": 0, "skipped_halted": 0}
         if not watched:
             return result
 
@@ -241,7 +243,9 @@ class AgentPod:
                     "[%s] Failed evaluating %s: %s", self.account_name, symbol, exc, exc_info=True
                 )
                 continue
-            if outcome != "none":
+            if outcome == "halted":
+                result["skipped_halted"] += 1
+            elif outcome != "none":
                 if outcome == "closed":
                     result["closed"] += 1
                 positions, margins = await self._refreshed(positions, margins)
@@ -372,7 +376,7 @@ class AgentPod:
             signals={
                 "signal": "EXIT",
                 "confidence": 1.0,
-                "reasoning": f"{reason} reached: price {ltp} against plan {self._plans[position.symbol]}",
+                "reasoning": f"{reason}: price {ltp}, plan {self._plans.get(position.symbol)}",
             },
             debate_result=None,
             guardian_verdict={"exit": True},
@@ -386,6 +390,22 @@ class AgentPod:
             return False
         await self._record_close(position.symbol, position, output)
         return True
+
+    async def flatten(self, reason: str) -> int:
+        """Close every open position at market, whatever the stops say. Returns how many closed.
+
+        Used by the kill-switch endpoint. Exits are never blocked by the switch or by risk limits.
+        """
+        agent_cfg = self.config.get("agents", {})
+        positions, margins = await self._broker_state()
+        open_positions = [p for p in positions if p.quantity != 0]
+        prices = await self.adapter.get_ltp([p.symbol for p in open_positions]) if open_positions else {}
+        closed = 0
+        for position in open_positions:
+            ltp = float(prices.get(position.symbol) or 0.0)
+            if await self._close_position(position, positions, margins, agent_cfg, ltp, f"flatten ({reason})"):
+                closed += 1
+        return closed
 
     async def _record_close(self, symbol: str, position: Any, output: Any) -> None:
         """Feed a closed trade to the memory agent: hindsight on the entry, then a reflection."""
@@ -456,8 +476,13 @@ class AgentPod:
     ) -> str:
         """Run the full analyst → debate → guardian → executor pipeline for one symbol.
 
-        Returns "entered" or "closed" when an order was placed, otherwise "none".
+        Returns "entered" or "closed" when an order was placed, "halted" when the kill switch
+        skipped the symbol, otherwise "none".
         """
+        halted = self._kill_switch.is_halted(self.account_name)
+        if halted and not any(p.symbol == symbol and p.quantity != 0 for p in positions):
+            return "halted"  # nothing open and no new risk allowed: do not spend a model call
+
 
         # ---- Fetch LTP: with no price there is nothing to analyse or trade ----
         market_state: dict = {"ltp": 0.0, "symbol": symbol}
@@ -501,6 +526,7 @@ class AgentPod:
             debate_result=None,
             guardian_verdict=None,
             config=agent_cfg,
+            halted=halted,
         )
 
         # ---- 1. Analyst --------------------------------------------------
