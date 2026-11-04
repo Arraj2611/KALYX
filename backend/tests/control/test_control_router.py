@@ -66,3 +66,49 @@ def test_flatten_calls_the_pod(client):
     set_pods({"paper_test": pod})
     response = client.post("/api/control/flatten/paper_test", headers=HEADERS)
     assert response.status_code == 200 and response.json()["closed"] == 2 and "flatten" in pod.reason
+
+
+class FakeAlerts:
+    def __init__(self, fail=False):
+        self.fail, self.calls = fail, []
+
+    async def send_critical(self, account, message):
+        self.calls.append(("critical", account, message))
+        if self.fail:
+            raise RuntimeError("telegram down")
+
+    async def send_info(self, account, message):
+        self.calls.append(("info", account, message))
+
+
+@pytest.fixture
+def alerts():
+    from app.control.router import set_alert_service
+
+    fake = FakeAlerts()
+    set_alert_service(fake)
+    yield fake
+    set_alert_service(None)
+
+
+def test_halt_sends_a_critical_alert(client, alerts):
+    client.post("/api/control/halt", headers=HEADERS, json={"scope": "paper_test", "reason": "odd fills"})
+    kind, scope, message = alerts.calls[0]
+    assert kind == "critical" and scope == "paper_test" and "odd fills" in message
+
+
+def test_resume_sends_an_info_alert(client, alerts):
+    client.post("/api/control/resume", headers=HEADERS, json={"scope": "all"})
+    assert alerts.calls[0][0] == "info"
+
+
+def test_a_failing_alert_does_not_fail_the_halt(client):
+    from app.control.router import set_alert_service
+
+    set_alert_service(FakeAlerts(fail=True))
+    try:
+        response = client.post("/api/control/halt", headers=HEADERS, json={"scope": "all", "reason": "x"})
+    finally:
+        set_alert_service(None)
+    assert response.status_code == 200
+    assert client.get("/api/control/status", headers=HEADERS).json()["kill_switch"]["global"]["reason"] == "x"

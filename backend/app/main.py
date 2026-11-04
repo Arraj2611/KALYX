@@ -149,6 +149,15 @@ async def lifespan(app: FastAPI):
             logger.error(f"Intelligence layer init failed: {exc}")
             intelligence_builder = None
 
+    # Alerts: Telegram when configured. Without it, warnings only reach the log.
+    from app.alerts.factory import build_alert_service
+    from app.control.router import set_alert_service
+
+    alert_service = build_alert_service(settings)
+    set_alert_service(alert_service)
+    if alert_service is None:
+        logger.warning("Telegram alerts are not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID): alerts go to the log only")
+
     # Initialize agent pods for accounts with agents enabled
     from app.agents.pod import AgentPod
     from app.markets.calendar import MarketCalendar, load_holidays
@@ -170,7 +179,7 @@ async def lifespan(app: FastAPI):
                         adapter=adapter,
                         config=acct_config,
                         db=db_session,
-                        alert_service=None,
+                        alert_service=alert_service,
                         intelligence_builder=intelligence_builder,
                         calendar=market_calendar,
                     )

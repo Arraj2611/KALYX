@@ -30,11 +30,12 @@ class ResumeRequest(BaseModel):
     scope: str = Field(min_length=1)
 
 
-async def _alert(scope: str, message: str) -> None:
+async def _alert(kind: str, scope: str, message: str) -> None:
+    """kind is the alert service method suffix: "critical" or "info". A failed alert never fails the request."""
     if _alert_service is None:
         return
     try:
-        await _alert_service.send_critical(scope, message)
+        await getattr(_alert_service, f"send_{kind}")(scope, message)
     except Exception as exc:  # noqa: BLE001
         logger.error("Could not send kill-switch alert: %s", exc)
 
@@ -50,14 +51,14 @@ async def status(db: Session = Depends(get_db_session)):
 @router.post("/halt")
 async def halt(request: HaltRequest, db: Session = Depends(get_db_session)):
     KillSwitch(lambda: db).halt(request.scope, request.reason, by="api")
-    await _alert(request.scope, f"KILL SWITCH ON ({request.scope}): {request.reason}")
+    await _alert("critical", request.scope, f"KILL SWITCH ON ({request.scope}): {request.reason}")
     return {"status": "halted", "scope": request.scope}
 
 
 @router.post("/resume")
 async def resume(request: ResumeRequest, db: Session = Depends(get_db_session)):
     KillSwitch(lambda: db).resume(request.scope, by="api")
-    await _alert(request.scope, f"Kill switch off ({request.scope})")
+    await _alert("info", request.scope, f"Kill switch off ({request.scope})")
     return {"status": "resumed", "scope": request.scope}
 
 
