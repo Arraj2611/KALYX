@@ -4,12 +4,13 @@ KALYX Trading System - FastAPI Application Entry Point
 import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import yaml as _yaml
 from app.config import settings
+from app.security import check_ws_token, require_api_key
 from app.utils.logging import setup_logging
 from app.data.database import init_db, close_db, SessionLocal
 from app.data.redis_client import init_redis, close_redis, get_redis_client
@@ -238,8 +239,11 @@ async def health_check():
 
 # WebSocket endpoint
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time updates."""
+async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
+    """WebSocket endpoint for real-time updates. Needs ?token=<CONTROL_API_KEY>."""
+    if not check_ws_token(token):
+        await websocket.close(code=1008)
+        return
     await manager.connect(websocket)
     try:
         while True:
@@ -252,13 +256,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # API routers
-app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(strategies_router, prefix="/api/strategies", tags=["Strategies"])
-app.include_router(execution_router, prefix="/api/execution", tags=["Execution"])
-app.include_router(risk_router, prefix="/api/risk", tags=["Risk Management"])
-app.include_router(data_router, prefix="/api/data", tags=["Data"])
-app.include_router(agents_router, prefix="/api/agents", tags=["AI Agents"])
-app.include_router(decisions_router, prefix="/api/decisions", tags=["Decisions"])
+app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"], dependencies=[Depends(require_api_key)])
+app.include_router(strategies_router, prefix="/api/strategies", tags=["Strategies"], dependencies=[Depends(require_api_key)])
+app.include_router(execution_router, prefix="/api/execution", tags=["Execution"], dependencies=[Depends(require_api_key)])
+app.include_router(risk_router, prefix="/api/risk", tags=["Risk Management"], dependencies=[Depends(require_api_key)])
+app.include_router(data_router, prefix="/api/data", tags=["Data"], dependencies=[Depends(require_api_key)])
+app.include_router(agents_router, prefix="/api/agents", tags=["AI Agents"], dependencies=[Depends(require_api_key)])
+app.include_router(decisions_router, prefix="/api/decisions", tags=["Decisions"], dependencies=[Depends(require_api_key)])
 
 
 if __name__ == "__main__":
