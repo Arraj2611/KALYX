@@ -19,6 +19,7 @@ accounts:
     broker: paper
     segments: [CASH, FNO]
     mode: paper
+    market: NSE
     config:
       initial_capital: 1000000
       slippage_pct: 0.05

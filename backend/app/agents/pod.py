@@ -35,6 +35,7 @@ from app.agents.memory import MemoryAgent
 from app.agents.strategist import StrategistAgent
 from app.agents.streams import AgentStreamPublisher
 from app.control.killswitch import KillSwitch
+from app.markets.calendar import MarketCalendar
 from app.decisions.models import DecisionAction, DecisionLog
 from app.decisions.logger import DecisionLogger
 
@@ -67,6 +68,8 @@ class AgentPod:
         alert_service: Any = None,
         stream_publisher: Any = None,
         intelligence_builder: Any = None,
+        clock: Any = None,
+        calendar: MarketCalendar | None = None,
     ) -> None:
         self.account_name = account_name
         self.adapter = adapter
@@ -83,6 +86,8 @@ class AgentPod:
         self._no_price: set[str] = set()
         self._last_cycle: dict | None = None
         self._kill_switch = KillSwitch(lambda: self._db)
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._calendar = calendar or MarketCalendar()
         # Serialises everything that places an order: the analysis cycle, the stop monitor and flatten.
         self._trade_lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
@@ -206,10 +211,18 @@ class AgentPod:
     async def _monitor_tick(self) -> int:
         """One stop/target check against fresh broker state. Returns how many positions it closed."""
         agent_cfg = self.config.get("agents", {})
+        if not self._market_open():
+            return 0  # nothing can fill while the exchange is closed
         async with self._trade_lock:
             positions, margins = await self._broker_state()
             await self._recover_plans(positions)
             return await self._enforce_exits(positions, margins, agent_cfg)
+
+    def _market_open(self) -> bool:
+        """The gate: the account's exchange (config ``market``, default NSE) is in session."""
+        if not self.config.get("agents", {}).get("market_gate", True):
+            return True
+        return self._calendar.is_open(self.config.get("market", "NSE"), self._clock())
 
     async def _alert(self, message: str) -> None:
         logger.error("[%s] %s", self.account_name, message)
@@ -258,6 +271,12 @@ class AgentPod:
         watched = agent_cfg.get("watched_symbols", [])
         result = {"evaluated": 0, "errors": 0, "closed": 0, "skipped_halted": 0}
         if not watched:
+            return result
+
+        if not self._market_open():
+            # Closed market: no price to trust, nothing can fill, and a model call would be wasted.
+            result["skipped_closed"] = len(watched)
+            await self._finish_cycle(result)
             return result
 
         async with self._trade_lock:

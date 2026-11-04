@@ -151,6 +151,11 @@ async def lifespan(app: FastAPI):
 
     # Initialize agent pods for accounts with agents enabled
     from app.agents.pod import AgentPod
+    from app.markets.calendar import MarketCalendar, load_holidays
+
+    market_calendar = MarketCalendar(
+        load_holidays(os.path.join(os.path.dirname(__file__), "..", "config", "market_holidays.yaml"))
+    )
 
     agent_pods = {}
     if os.path.exists(config_path):
@@ -167,6 +172,7 @@ async def lifespan(app: FastAPI):
                         db=db_session,
                         alert_service=None,
                         intelligence_builder=intelligence_builder,
+                        calendar=market_calendar,
                     )
                     agent_pods[name] = pod
                     logger.info(f"Agent pod created: {name}")

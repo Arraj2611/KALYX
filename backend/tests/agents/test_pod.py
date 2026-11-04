@@ -70,6 +70,7 @@ def pod_config():
         "agents": {
             "enabled": True,
             "eval_interval_seconds": 60,
+            "market_gate": False,
             "watched_symbols": ["NIFTY"],
             "debate": {"enabled": False},
             "guardian": {

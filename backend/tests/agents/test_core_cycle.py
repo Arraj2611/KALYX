@@ -10,6 +10,7 @@ import asyncio
 import json
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -91,7 +92,7 @@ class FakeMarket:
         self.prices = dict(prices)
 
 
-def make_pod(tmp_path, ollama, adapter, session, alerts, guardian=None, llm=None, symbols=("NIFTY",)):
+def make_pod(tmp_path, ollama, adapter, session, alerts, guardian=None, llm=None, symbols=("NIFTY",), agents=None, **pod_kwargs):
     defaults = tmp_path / "prompts" / "defaults"
     defaults.mkdir(parents=True, exist_ok=True)
     for name in AGENTS:
@@ -114,11 +115,15 @@ def make_pod(tmp_path, ollama, adapter, session, alerts, guardian=None, llm=None
             },
             "llm": {"quick_model": "m", "deep_model": "m", "ollama_base_url": ollama.url, "max_retries": 1, **(llm or {})},
             "monitor_interval_seconds": 0.05,
+            "market_gate": False,
+            **(agents or {}),
             "prompts_dir": str(tmp_path / "prompts"),
             "memory": {"recall_limit": 10},
         },
     }
-    return AgentPod(account_name="paper_test", adapter=adapter, config=config, db=session, alert_service=alerts)
+    return AgentPod(
+        account_name="paper_test", adapter=adapter, config=config, db=session, alert_service=alerts, **pod_kwargs
+    )
 
 
 @pytest.fixture
@@ -497,3 +502,60 @@ async def test_eval_loop_starts_the_monitor_and_stop_cancels_it(world):
     await world.pod.stop()
 
     assert world.pod._monitor_task.done()
+
+
+IN_SESSION = datetime(2026, 11, 4, 5, 0, tzinfo=timezone.utc)  # Wednesday 10:30 IST
+AFTER_CLOSE = datetime(2026, 11, 4, 11, 0, tzinfo=timezone.utc)  # Wednesday 16:30 IST
+
+
+@pytest.mark.asyncio
+async def test_closed_market_makes_no_model_call_and_reports_skipped_closed(world):
+    pod = world.build(agents={"market_gate": True}, clock=lambda: AFTER_CLOSE)
+
+    result = await pod.run_cycle()
+
+    assert result["skipped_closed"] == 1 and result["evaluated"] == 0 and result["errors"] == 0
+    assert world.ollama.count("analyst") == 0 and world.rows() == []
+    assert pod.get_status()["last_cycle"]["skipped_closed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_open_market_runs_normally(world):
+    pod = world.build(agents={"market_gate": True}, clock=lambda: IN_SESSION)
+
+    result = await pod.run_cycle()
+
+    assert result["evaluated"] == 1 and result.get("skipped_closed", 0) == 0
+    assert len(await positions(world)) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_gate_can_be_disabled(world):
+    pod = world.build(agents={"market_gate": False}, clock=lambda: AFTER_CLOSE)
+
+    result = await pod.run_cycle()
+
+    assert result["evaluated"] == 1
+
+
+@pytest.mark.asyncio
+async def test_listed_holiday_closes_the_gate(world):
+    from app.markets.calendar import MarketCalendar
+
+    calendar = MarketCalendar({"NSE": {IN_SESSION.date()}})
+    pod = world.build(agents={"market_gate": True}, clock=lambda: IN_SESSION, calendar=calendar)
+
+    assert (await pod.run_cycle())["skipped_closed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_monitor_waits_while_the_market_is_closed(world):
+    await world.pod.run_cycle()
+    clock = {"now": AFTER_CLOSE}
+    pod = world.build(agents={"market_gate": True}, clock=lambda: clock["now"])
+    world.market.prices["NIFTY"] = 89.0
+
+    assert await pod._monitor_tick() == 0 and len(await positions(world)) == 1
+
+    clock["now"] = IN_SESSION
+    assert await pod._monitor_tick() == 1 and await positions(world) == []
