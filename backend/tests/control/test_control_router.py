@@ -11,12 +11,17 @@ KEY = "k" * 16
 HEADERS = {"X-API-Key": KEY}
 
 
+class _StubPod:
+    def get_status(self):
+        return {}
+
+
 @pytest.fixture
 def client(session, monkeypatch):
     monkeypatch.setattr(settings, "CONTROL_API_KEY", KEY)
     monkeypatch.setattr(settings, "API_AUTH_DISABLED", False)
     app.dependency_overrides[get_db_session] = lambda: session
-    set_pods({})
+    set_pods({"paper_test": _StubPod()})
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
     set_pods({})
@@ -66,6 +71,25 @@ def test_flatten_calls_the_pod(client):
     set_pods({"paper_test": pod})
     response = client.post("/api/control/flatten/paper_test", headers=HEADERS)
     assert response.status_code == 200 and response.json()["closed"] == 2 and "flatten" in pod.reason
+
+
+def test_halt_on_an_unknown_account_is_404_and_changes_nothing(client, session):
+    response = client.post("/api/control/halt", headers=HEADERS, json={"scope": "Paper_Test", "reason": "typo"})
+    assert response.status_code == 404
+    assert not KillSwitch(lambda: session).is_halted("paper_test")
+
+
+def test_flatten_halts_the_account_and_reports_what_is_left(client, session):
+    class Pod:
+        last_flatten_remaining = ["TCS"]
+
+        async def flatten(self, reason):
+            return 1
+
+    set_pods({"paper_test": Pod()})
+    body = client.post("/api/control/flatten/paper_test", headers=HEADERS).json()
+    assert body["status"] == "partial" and body["remaining"] == ["TCS"] and body["closed"] == 1
+    assert KillSwitch(lambda: session).is_halted("paper_test")
 
 
 class FakeAlerts:

@@ -137,6 +137,10 @@ class PaperAdapter(BrokerAdapter):
         """Fill immediately at price ± slippage; update positions and margin."""
         market = await self._market_prices([order.symbol])
         raw_price = market.get(order.symbol) or order.price or 0.0
+        if raw_price <= 0:
+            from app.brokers.base import OrderRejectedError
+
+            raise OrderRejectedError(self.name, f"No price for {order.symbol}; paper will not fill at zero.")
         slip_factor = self._slippage_pct / 100.0
 
         if order.transaction_type == "BUY":

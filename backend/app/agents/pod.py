@@ -91,6 +91,10 @@ class AgentPod:
         # Serialises everything that places an order: the analysis cycle, the stop monitor and flatten.
         self._trade_lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
+        # Memory updates wait here until the trade lock is released: a reflection is a model call.
+        self._memory_queue: list[dict] = []
+        self.last_flatten_remaining: list[str] = []
+        self._calendar_warned = False
         self._price_miss: dict[str, int] = {}
         self._price_alerted: set[str] = set()
 
@@ -220,13 +224,22 @@ class AgentPod:
         async with self._trade_lock:
             positions, margins = await self._broker_state()
             await self._recover_plans(positions)
-            return await self._enforce_exits(positions, margins, agent_cfg)
+            closed = await self._enforce_exits(positions, margins, agent_cfg)
+        await self._flush_memory()
+        return closed
 
     def _market_open(self) -> bool:
         """The gate: the account's exchange (config ``market``, default NSE) is in session."""
         if not self.config.get("agents", {}).get("market_gate", True):
             return True
-        return self._calendar.is_open(self.config.get("market", "NSE"), self._clock())
+        try:
+            return self._calendar.is_open(self.config.get("market", "NSE"), self._clock())
+        except ValueError as exc:
+            # An exchange the calendar does not know must not switch stop enforcement off.
+            if not self._calendar_warned:
+                self._calendar_warned = True
+                logger.error("[%s] %s; treating the market as open", self.account_name, exc)
+            return True
 
     async def _alert(self, message: str) -> None:
         logger.error("[%s] %s", self.account_name, message)
@@ -300,6 +313,7 @@ class AgentPod:
                 result["errors"] += 1
             if result["closed"]:
                 positions, margins = await self._refreshed(positions, margins)
+        await self._flush_memory()
 
         for symbol in watched:
             result["evaluated"] += 1
@@ -471,13 +485,22 @@ class AgentPod:
         async with self._trade_lock:
             positions, margins = await self._broker_state()
             open_positions = [p for p in positions if p.quantity != 0]
-            prices = await self.adapter.get_ltp([p.symbol for p in open_positions]) if open_positions else {}
+            try:
+                prices = await self.adapter.get_ltp([p.symbol for p in open_positions]) if open_positions else {}
+            except Exception as exc:  # noqa: BLE001 - a dead price feed must not stop a flatten
+                logger.warning("[%s] Flatten could not fetch prices: %s", self.account_name, exc)
+                prices = {}
             closed = 0
+            self.last_flatten_remaining = []
             for position in open_positions:
-                ltp = float(prices.get(position.symbol) or 0.0)
+                # The position's last price is the fallback; the broker still fills at market.
+                ltp = float(prices.get(position.symbol) or getattr(position, "last_price", 0.0) or 0.0)
                 if await self._close_position(position, positions, margins, agent_cfg, ltp, f"flatten ({reason})"):
                     closed += 1
-            return closed
+                else:
+                    self.last_flatten_remaining.append(position.symbol)
+        await self._flush_memory()
+        return closed
 
     async def _record_close(self, symbol: str, position: Any, output: Any) -> None:
         """Feed a closed trade to the memory agent: hindsight on the entry, then a reflection."""
@@ -485,15 +508,25 @@ class AgentPod:
         if plan is None or position is None or not plan.get("decision_id"):
             logger.info("[%s] %s closed with no recorded entry; skipping memory", self.account_name, symbol)
             return
-        try:
-            await self.memory.store_outcome(
-                decision_id=plan["decision_id"],
-                entry_price=position.average_price,
-                exit_price=output.data["fill_price"],
-                pnl=output.data["realised_pnl"],
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.error("[%s] Memory update failed for %s: %s", self.account_name, symbol, exc)
+        self._memory_queue.append(
+            {
+                "symbol": symbol,
+                "decision_id": plan["decision_id"],
+                "entry_price": position.average_price,
+                "exit_price": output.data["fill_price"],
+                "pnl": output.data["realised_pnl"],
+            }
+        )
+
+    async def _flush_memory(self) -> None:
+        """Run queued memory updates. Call with the trade lock released: reflection is a slow model call."""
+        queued, self._memory_queue = self._memory_queue, []
+        for item in queued:
+            symbol = item.pop("symbol")
+            try:
+                await self.memory.store_outcome(**item)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[%s] Memory update failed for %s: %s", self.account_name, symbol, exc)
 
     def _open_plan(self, symbol: str, signal: str, signals: dict, output: Any) -> None:
         fill = output.data["fill_price"]
@@ -636,9 +669,7 @@ class AgentPod:
 
         # ---- 2. Debate (optional) ----------------------------------------
         debate_cfg = agent_cfg.get("debate", {})
-        if debate_cfg.get("enabled") and not (
-            debate_cfg.get("skip_for_exits") and signal == "EXIT"
-        ):
+        if debate_cfg.get("enabled") and signal != "EXIT":  # a model never gets to veto an exit
             bull_output = await self.bullish.run(context)
             bear_output = await self.bearish.run(context)
             context.debate_result = {
@@ -668,10 +699,27 @@ class AgentPod:
         # ---- 3 and 4. Guardian, then executor: under the trade lock, on a fresh broker view ----
         # The model took seconds; the stop monitor may have closed or opened something meanwhile.
         async with self._trade_lock:
-            positions, margins = await self._refreshed(positions, margins)
+            try:
+                positions, margins = await self._broker_state()
+            except Exception as exc:  # noqa: BLE001
+                # A stale view could sell a position the stop monitor already closed. Stand down; the
+                # next cycle retries and the stop monitor keeps running.
+                logger.error("[%s] No fresh broker view for %s, skipping: %s", self.account_name, symbol, exc)
+                await self._decision_logger.log_decision(
+                    account_name=self.account_name,
+                    symbol=symbol,
+                    signal=signal,
+                    action=DecisionAction.SKIPPED,
+                    confidence=analyst_output.confidence,
+                    reasoning=f"Broker state unavailable when the order was due: {exc}",
+                    market_state=market_state,
+                    skip_reason="broker_state_unavailable",
+                )
+                return "none"
             context.positions, context.margins = positions, margins
             context.recent_decisions = self._todays_decisions(positions)
             context.now = self._clock()
+            context.halted = self._kill_switch.is_halted(self.account_name)  # may have changed during the model calls
 
             guardian_output = self.guardian.run(context)
             context.guardian_verdict = guardian_output.data
@@ -701,6 +749,7 @@ class AgentPod:
                     self._open_plan(symbol, signal, context.signals, executor_output)
                     outcome = "entered"
 
+        await self._flush_memory()
         if self._stream_publisher:
             await self._stream_publisher.publish_decision(
                 self.account_name,

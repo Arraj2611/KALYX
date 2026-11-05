@@ -40,6 +40,20 @@ async def _alert(kind: str, scope: str, message: str) -> None:
         logger.error("Could not send kill-switch alert: %s", exc)
 
 
+def _known_scope(scope: str) -> bool:
+    """'all', a pod, or an account the execution router knows. A typo must not look like a halt."""
+    scope = scope.strip()
+    if scope.lower() == "all" or scope in get_pods():
+        return True
+    from app.execution import router as execution_router
+
+    manager = getattr(execution_router, "_account_manager", None)
+    try:
+        return manager is not None and manager.get_adapter(scope) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @router.get("/status")
 async def status(db: Session = Depends(get_db_session)):
     return {
@@ -50,6 +64,10 @@ async def status(db: Session = Depends(get_db_session)):
 
 @router.post("/halt")
 async def halt(request: HaltRequest, db: Session = Depends(get_db_session)):
+    if not _known_scope(request.scope):
+        raise HTTPException(
+            status_code=404, detail=f"Unknown account '{request.scope}'; use 'all' or a configured account"
+        )
     KillSwitch(lambda: db).halt(request.scope, request.reason, by="api")
     await _alert("critical", request.scope, f"KILL SWITCH ON ({request.scope}): {request.reason}")
     return {"status": "halted", "scope": request.scope}
@@ -63,9 +81,19 @@ async def resume(request: ResumeRequest, db: Session = Depends(get_db_session)):
 
 
 @router.post("/flatten/{account_name}")
-async def flatten(account_name: str):
+async def flatten(account_name: str, db: Session = Depends(get_db_session)):
     pods = get_pods()
     if account_name not in pods:
         raise HTTPException(status_code=404, detail=f"No agent pod for account '{account_name}'")
-    closed = await pods[account_name].flatten(f"flatten requested through the API for {account_name}")
-    return {"status": "flattened", "account": account_name, "closed": closed}
+    # Stop new entries first, so nothing reopens while positions are being closed.
+    KillSwitch(lambda: db).halt(account_name, "flatten requested through the API", by="api-flatten")
+    pod = pods[account_name]
+    closed = await pod.flatten(f"flatten requested through the API for {account_name}")
+    remaining = list(getattr(pod, "last_flatten_remaining", []) or [])
+    return {
+        "status": "flattened" if not remaining else "partial",
+        "account": account_name,
+        "closed": closed,
+        "remaining": remaining,
+        "halted": True,
+    }

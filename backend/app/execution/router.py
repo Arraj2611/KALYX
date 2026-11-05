@@ -30,6 +30,17 @@ def _get_adapter(account_name: str):
         raise HTTPException(status_code=404, detail=f"Account '{account_name}' not found")
 
 
+async def _reduces_position(account_name: str, order: "OrderRequest") -> bool:
+    """A halt stops new risk, never an exit: allow an order that only closes part or all of a position."""
+    try:
+        positions = await _get_adapter(account_name).get_positions()
+    except Exception:  # noqa: BLE001 - cannot prove it is an exit, so it stays blocked
+        return False
+    held = sum(p.quantity for p in positions if p.symbol == order.tradingsymbol)
+    side = order.transaction_type.upper()
+    return (side == "SELL" and 0 < order.quantity <= held) or (side == "BUY" and 0 < order.quantity <= -held)
+
+
 class OrderRequest(BaseModel):
     """Order request model."""
     tradingsymbol: str
@@ -62,7 +73,7 @@ async def place_order(
     db: Session = Depends(get_db_session)
 ):
     """Place a new order."""
-    if KillSwitch(lambda: db).is_halted(account_name):
+    if KillSwitch(lambda: db).is_halted(account_name) and not await _reduces_position(account_name, order):
         raise HTTPException(status_code=423, detail="Kill switch is on for this account")
     adapter = _get_adapter(account_name)
     service = ExecutionService(db, adapter)
