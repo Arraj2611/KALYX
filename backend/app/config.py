@@ -53,6 +53,14 @@ class Settings(BaseSettings):
         default=None,
         description="Key for encrypting stored tokens"
     )
+    CONTROL_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Key required in the X-API-Key header for every trading and control endpoint"
+    )
+    API_AUTH_DISABLED: bool = Field(
+        default=False,
+        description="Run the API without a key. Local development only: anyone who can reach it can place orders"
+    )
     
     # Risk Management
     MAX_CAPITAL_USAGE_PCT: float = Field(

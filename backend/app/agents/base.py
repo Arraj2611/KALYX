@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import abc
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -42,6 +43,8 @@ class AgentContext:
     debate_result: dict | None
     guardian_verdict: dict | None
     config: dict
+    halted: bool = False  # kill switch on: no new positions
+    now: datetime | None = None  # the pod's clock; None means the real time
 
 
 # ---------------------------------------------------------------------------
@@ -113,15 +116,15 @@ class BaseAgent(abc.ABC):
     # LLM interaction
     # ------------------------------------------------------------------
 
-    def think(self, prompt: str, tier: Optional[str] = None) -> str:
+    async def think(self, prompt: str, tier: Optional[str] = None) -> str:
         """Send a prompt to the LLM router and return the response text.
 
         Uses the agent's default tier unless overridden.
         """
         chosen_tier = tier or self.llm_tier
-        return self.llm_router.generate(
+        return await self.llm_router.generate(
+            prompt=prompt,
             system_prompt=self.system_prompt,
-            user_prompt=prompt,
             tier=chosen_tier,
         )
 

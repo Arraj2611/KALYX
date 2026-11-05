@@ -25,11 +25,12 @@ Core agent infrastructure. Each account gets its own agent pod.
 - Per-account agents: Analyst, Guardian, Executor, Strategist, Memory
 - Bull/bear debate pattern before every trade signal (from TradingAgents)
 - Two-tier LLM: Ollama (fast/real-time) + Cloud API (deep analysis)
-- LangGraph orchestration for agent coordination
-- Memory Agent per account with hindsight reflections
-- Memory Mesh — Orchestrator queries across all account memories
+- LangGraph orchestration for agent coordination — **not built**: the pod is a hand-written sequential pipeline (`app/agents/pod.py`). Deep Agents adoption is planned in `docs/superpowers/specs/2026-11-02-kalyx-fleet-roadmap-design.md`
+- Memory Agent per account with hindsight reflections — wired to closed trades since 2026-11-02
+- Memory Mesh — Orchestrator queries across all account memories — **not built**
 - Structured data flows per domain (market, sentiment, fundamentals)
-- Agent communication via Redis Streams
+- Agent communication via Redis Streams — **publisher code exists but nothing creates or consumes it**
+- Strategist agent exists but is **dormant by design** (nothing schedules it; it may only propose changes, never apply them)
 
 **Reference repos:**
 - `TradingAgents` — debate pattern, memory reflections, LangGraph, two-tier LLM
@@ -48,7 +49,7 @@ Multi-source data aggregation + cross-market intelligence.
 - News/sentiment feeds
 - Geopolitical signal integration (WorldMonitor patterns)
 - 3-tier caching: in-memory → Redis → PostgreSQL
-- pgvector for semantic search over trade journals
+- pgvector for semantic search over trade journals — **not built**: memory recall is a SQL query on `DecisionLog`
 - MCP server integration (Zerodha MCP, Groww MCP, Binance MCP)
 
 ---
@@ -105,3 +106,7 @@ Full 24/7 unattended operation.
 - **Temporal.io** for durable multi-step workflows (replaces APScheduler)
 - **gRPC** service boundaries when splitting into microservices
 - Mobile alerts (beyond Telegram)
+
+---
+
+> **Update 2026-11-04.** Sub-projects 5 and 6 are now absorbed by the phases in `docs/superpowers/specs/2026-11-02-kalyx-fleet-roadmap-design.md` (orchestrator and autonomy ladder: Phases 4, 8, 9; dashboard: the "control room" workstream). Phase 0 work is in `docs/superpowers/plans/2026-11-04-phase-0-core-safety-and-options-foundation.md`.

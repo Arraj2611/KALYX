@@ -59,3 +59,7 @@ CLAUDE.md
 GEMINI.md
 .code-review-graph/
 .remember/
+
+# Laya shadow spike
+backend/spike/shadow.db*
+backend/spike/poller.log

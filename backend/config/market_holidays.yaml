@@ -1,0 +1,10 @@
+# Exchange holidays, one list of ISO dates per exchange.
+#
+# NOT FILLED IN. Copy the dates from the exchange's own holiday circular (NSE for India, NYSE for the US)
+# before relying on the market-hours gate on weekdays that are holidays. Until then a weekday holiday looks
+# like an open day, and a paper account will keep analysing a stale price that day.
+#
+# Example:
+# NSE: ["2026-01-26", "2026-08-15"]
+NSE: []
+NYSE: []

@@ -1,0 +1,18 @@
+# Isolated environment for the Laya shadow spike. NOT the app's requirements.
+# Install: python -m venv backend/spike/.venv
+#          backend/spike/.venv/Scripts/python -m pip install --index-url https://download.pytorch.org/whl/cu121 torch==2.5.1
+#          backend/spike/.venv/Scripts/python -m pip install -r backend/spike/requirements-spike.txt
+transformers>=4.48,<5
+huggingface_hub<1.0
+tokenizers<0.22
+laya==0.4.17
+numpy
+pandas
+sqlalchemy>=2.0
+pyyaml
+yfinance
+gdeltdoc
+pytest
+pytest-asyncio
+trafilatura>=1.12,<3
+pypdf>=4,<7

@@ -1,0 +1,33 @@
+# Market-wide news that moves the NIFTY level, for index options. Labeled with the raw NIFTY return
+# (no stock-minus-index adjustment). 'query' is the Google News search; 'aliases' match titles in the
+# publisher feeds (case-sensitive, longest first). Aliases must not collide with company aliases.
+- symbol: "MKT_NIFTY"
+  ticker: "^NSEI"
+  keywords: ["Nifty 50"]
+  query: "Nifty OR Sensex stock market"
+  aliases: ["Nifty", "Nifty 50", "Sensex"]
+- symbol: "MKT_RBI"
+  ticker: "^NSEI"
+  keywords: ["RBI"]
+  query: "RBI monetary policy OR repo rate"
+  aliases: ["RBI", "Reserve Bank of India"]
+- symbol: "MKT_FED"
+  ticker: "^NSEI"
+  keywords: ["Federal Reserve"]
+  query: "Federal Reserve interest rate"
+  aliases: ["Fed", "Federal Reserve", "FOMC"]
+- symbol: "MKT_CRUDE"
+  ticker: "^NSEI"
+  keywords: ["crude oil"]
+  query: "crude oil price OR Brent"
+  aliases: ["crude oil", "Crude oil", "Brent"]
+- symbol: "MKT_RUPEE"
+  ticker: "^NSEI"
+  keywords: ["rupee"]
+  query: "rupee dollar exchange rate"
+  aliases: ["rupee", "Rupee"]
+- symbol: "MKT_BUDGET"
+  ticker: "^NSEI"
+  keywords: ["Union Budget"]
+  query: "Union Budget India"
+  aliases: ["Union Budget"]

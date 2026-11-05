@@ -8,6 +8,21 @@ from unittest.mock import AsyncMock, MagicMock
 from app.brokers.paper.adapter import PaperAdapter
 from app.agents.pod import AgentPod
 
+import app.control.models  # noqa: F401
+import app.data.models  # noqa: F401
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.data.database import Base
+
+
+def real_session():
+    """A real in-memory database: the pod now reads the kill switch and decision history from it."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,6 +70,7 @@ def pod_config():
         "agents": {
             "enabled": True,
             "eval_interval_seconds": 60,
+            "market_gate": False,
             "watched_symbols": ["NIFTY"],
             "debate": {"enabled": False},
             "guardian": {
@@ -90,13 +106,16 @@ def pod(pod_config, mock_llm_response, tmp_path):
 
     pod_config["agents"]["prompts_dir"] = str(tmp_path)
 
-    adapter = PaperAdapter(pod_config["config"])
+    async def prices(symbols):
+        return {symbol: 100.0 for symbol in symbols}
+
+    adapter = PaperAdapter(pod_config["config"], price_source=prices)
 
     p = AgentPod(
         account_name="paper_test",
         adapter=adapter,
         config=pod_config,
-        db=MagicMock(),
+        db=real_session(),
         alert_service=MagicMock(),
     )
 
@@ -137,12 +156,14 @@ async def test_pod_start_stop(pod):
 
 @pytest.mark.asyncio
 async def test_pod_single_cycle_buy(pod):
-    """A full eval cycle with a BUY signal completes without raising."""
+    """A full eval cycle with a BUY signal opens a position and reports no errors."""
     await pod.start()
-    await pod.run_cycle()
+    result = await pod.run_cycle()
     await pod.stop()
-    # No assertion on position — guardian/executor may or may not place
-    # depending on margin state, but the cycle must not raise.
+
+    assert result["errors"] == 0
+    (position,) = await pod.adapter.get_positions()
+    assert position.symbol == "NIFTY" and position.quantity == 3
 
 
 @pytest.mark.asyncio

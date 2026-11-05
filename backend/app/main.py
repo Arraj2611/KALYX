@@ -4,12 +4,14 @@ KALYX Trading System - FastAPI Application Entry Point
 import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import yaml as _yaml
 from app.config import settings
+from app.control.router import router as control_router
+from app.security import check_ws_token, require_api_key
 from app.utils.logging import setup_logging
 from app.data.database import init_db, close_db, SessionLocal
 from app.data.redis_client import init_redis, close_redis, get_redis_client
@@ -37,6 +39,7 @@ from app.decisions.router import router as decisions_router
 from app.utils.scheduler import setup_scheduler, start_scheduler, shutdown_scheduler
 from app.brokers.account_manager import AccountManager
 from app.brokers.paper.adapter import PaperAdapter
+from app.brokers.paper.prices import YahooPriceSource
 
 # Setup logging
 setup_logging()
@@ -91,7 +94,13 @@ async def lifespan(app: FastAPI):
                 config = yaml.safe_load(f)
             for name, acct in config.get("accounts", {}).items():
                 if acct.get("broker") == "paper":
-                    adapter = PaperAdapter(config=acct.get("config", {}))
+                    paper_cfg = acct.get("config", {})
+                    price_source = (
+                        YahooPriceSource(paper_cfg["price_symbols"])
+                        if paper_cfg.get("price_symbols")
+                        else None
+                    )
+                    adapter = PaperAdapter(config=paper_cfg, price_source=price_source)
                     account_manager.register(name, adapter, acct)
             logger.info(f"Loaded accounts config from {config_path}")
         except Exception as e:
@@ -140,8 +149,22 @@ async def lifespan(app: FastAPI):
             logger.error(f"Intelligence layer init failed: {exc}")
             intelligence_builder = None
 
+    # Alerts: Telegram when configured. Without it, warnings only reach the log.
+    from app.alerts.factory import build_alert_service
+    from app.control.router import set_alert_service
+
+    alert_service = build_alert_service(settings)
+    set_alert_service(alert_service)
+    if alert_service is None:
+        logger.warning("Telegram alerts are not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID): alerts go to the log only")
+
     # Initialize agent pods for accounts with agents enabled
     from app.agents.pod import AgentPod
+    from app.markets.calendar import MarketCalendar, load_holidays
+
+    market_calendar = MarketCalendar(
+        load_holidays(os.path.join(os.path.dirname(__file__), "..", "config", "market_holidays.yaml"))
+    )
 
     agent_pods = {}
     if os.path.exists(config_path):
@@ -156,8 +179,9 @@ async def lifespan(app: FastAPI):
                         adapter=adapter,
                         config=acct_config,
                         db=db_session,
-                        alert_service=None,
+                        alert_service=alert_service,
                         intelligence_builder=intelligence_builder,
+                        calendar=market_calendar,
                     )
                     agent_pods[name] = pod
                     logger.info(f"Agent pod created: {name}")
@@ -231,8 +255,11 @@ async def health_check():
 
 # WebSocket endpoint
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time updates."""
+async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
+    """WebSocket endpoint for real-time updates. Needs ?token=<CONTROL_API_KEY>."""
+    if not check_ws_token(token):
+        await websocket.close(code=1008)
+        return
     await manager.connect(websocket)
     try:
         while True:
@@ -245,13 +272,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # API routers
-app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(strategies_router, prefix="/api/strategies", tags=["Strategies"])
-app.include_router(execution_router, prefix="/api/execution", tags=["Execution"])
-app.include_router(risk_router, prefix="/api/risk", tags=["Risk Management"])
-app.include_router(data_router, prefix="/api/data", tags=["Data"])
-app.include_router(agents_router, prefix="/api/agents", tags=["AI Agents"])
-app.include_router(decisions_router, prefix="/api/decisions", tags=["Decisions"])
+app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"], dependencies=[Depends(require_api_key)])
+app.include_router(strategies_router, prefix="/api/strategies", tags=["Strategies"], dependencies=[Depends(require_api_key)])
+app.include_router(execution_router, prefix="/api/execution", tags=["Execution"], dependencies=[Depends(require_api_key)])
+app.include_router(risk_router, prefix="/api/risk", tags=["Risk Management"], dependencies=[Depends(require_api_key)])
+app.include_router(data_router, prefix="/api/data", tags=["Data"], dependencies=[Depends(require_api_key)])
+app.include_router(agents_router, prefix="/api/agents", tags=["AI Agents"], dependencies=[Depends(require_api_key)])
+app.include_router(decisions_router, prefix="/api/decisions", tags=["Decisions"], dependencies=[Depends(require_api_key)])
+app.include_router(control_router, prefix="/api/control", tags=["Control"], dependencies=[Depends(require_api_key)])
 
 
 if __name__ == "__main__":

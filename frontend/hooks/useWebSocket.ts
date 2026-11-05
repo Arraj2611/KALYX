@@ -13,7 +13,8 @@ export function useWebSocket(url: string, options: UseWebSocketOptions = {}) {
 
   useEffect(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    const wsUrl = apiUrl.replace('http', 'ws') + '/ws'
+    const apiKey = process.env.NEXT_PUBLIC_CONTROL_API_KEY || ''
+    const wsUrl = apiUrl.replace('http', 'ws') + '/ws' + (apiKey ? `?token=${encodeURIComponent(apiKey)}` : '')
     
     const ws = new WebSocket(wsUrl)
 
